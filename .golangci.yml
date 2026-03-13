@@ -1,0 +1,52 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # Start from the standard set (errcheck, govet, staticcheck, etc.) and add more.
+  default: standard
+  enable:
+    - bodyclose   # HTTP response bodies must be closed
+    - gocritic    # broad set of Go antipattern checks
+    - misspell    # catch typos in comments and strings
+    - nilerr      # returning nil when err is non-nil is almost always a bug
+    - revive      # opinionated style checks (successor to golint)
+    - gosec       # security issues; see exclusions below
+
+  settings:
+    errcheck:
+      exclude-functions:
+        # Closing HTTP response bodies and network connections in a defer is
+        # idiomatic Go; the error is unactionable at that point.
+        - (io.ReadCloser).Close
+        - (net.Conn).Close
+
+    gosec:
+      excludes:
+        - G204  # subprocess launched with variable — intentional in runner package
+
+    revive:
+      rules:
+        # Don't require a doc comment on every exported symbol; the code is a
+        # CLI tool and many functions are self-describing.
+        - name: exported
+          disabled: true
+
+  exclusions:
+    # Don't apply security or strict error-checking linters to test files.
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - gocritic
+
+formatters:
+  enable:
+    - goimports  # enforces import grouping: stdlib / external / internal
+
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/mallardduck/rancher-deployer

@@ -1,0 +1,29 @@
+# Build output
+dist/
+rancher-deployer
+rancher-deployer-*
+
+# Go
+*.test
+*.out
+coverage.txt
+
+# GoReleaser
+.goreleaser-artifacts/
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+*.env
+
+# Temporary files
+*.tmp
+*.yaml.bak
