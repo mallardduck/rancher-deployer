@@ -61,5 +61,3 @@ jobs:
           cache: true
 
       - uses: golangci/golangci-lint-action@v6
-        with:
-          version: "~> v2"
