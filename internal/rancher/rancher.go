@@ -201,7 +201,7 @@ func githubGet(client *http.Client, url string) (*http.Response, error) {
 	if token := githubToken(); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	return client.Do(req)
+	return client.Do(req) //nolint:gosec // URL is constructed from known GitHub API constants
 }
 
 // githubToken returns the first GitHub token found in the environment.
@@ -454,7 +454,8 @@ func Upgrade(namespace string, chart Chart, values HelmValues) error {
 	if err != nil {
 		return fmt.Errorf("could not create temporary values file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	tmpName := tmpFile.Name()
+	defer func() { _ = os.Remove(tmpName) }() //nolint:gosec // path comes from os.CreateTemp, not user input
 
 	out, err := runner.Output("helm", "get", "values", chart.ChartName, "--namespace", namespace, "--output", "yaml")
 	if err != nil {

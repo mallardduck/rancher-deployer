@@ -45,7 +45,7 @@ func loadCache() ([]ghRelease, bool) {
 	if err != nil {
 		return nil, false
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is derived from os.UserCacheDir(), not user input
 	if err != nil {
 		return nil, false
 	}
@@ -64,14 +64,14 @@ func saveCache(releases []ghRelease) {
 	if err != nil {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return
 	}
 	data, err := json.Marshal(releasesCache{FetchedAt: time.Now(), Releases: releases})
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(path, data, 0o644)
+	_ = os.WriteFile(path, data, 0o600)
 }
 
 // ResolveK8s determines the full k8s version (e.g. "v1.28.10") to target.
@@ -162,7 +162,7 @@ func githubGet(client *http.Client, url string) (*http.Response, error) {
 	if token := githubToken(); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	return client.Do(req)
+	return client.Do(req) //nolint:gosec // URL is constructed from known GitHub API constants
 }
 
 // fetchK3sReleases returns k3s GitHub releases, using a 24-hour disk cache to

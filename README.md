@@ -28,7 +28,7 @@ rancher-deploy deploy --rancher-version 2.8.5
 
 ## Installation
 
-### From source (requires Go 1.22+)
+### From source (requires Go 1.25+)
 
 ```bash
 git clone https://github.com/example/rancher-deploy
