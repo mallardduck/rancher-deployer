@@ -135,7 +135,10 @@ func TestGithubGet(t *testing.T) {
 
 	t.Run("returns error for invalid URL", func(t *testing.T) {
 		client := &http.Client{}
-		_, err := githubGet(client, "://invalid-url")
+		resp, err := githubGet(client, "://invalid-url")
+		if resp != nil {
+			resp.Body.Close()
+		}
 		if err == nil {
 			t.Error("githubGet should error on invalid URL")
 		}
