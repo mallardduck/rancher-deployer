@@ -1,4 +1,4 @@
-package version
+package k8sresolver
 
 import (
 	"testing"

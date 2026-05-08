@@ -10,9 +10,9 @@ import (
 	"github.com/mallardduck/rancher-deployer/internal/detect"
 	"github.com/mallardduck/rancher-deployer/internal/k3d"
 	"github.com/mallardduck/rancher-deployer/internal/k3s"
+	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
-	"github.com/mallardduck/rancher-deployer/internal/version"
 )
 
 type deployFlags struct {
@@ -78,7 +78,7 @@ func newDeployCmd() *cobra.Command {
 func runDeploy(f *deployFlags) error {
 	// Normalise version — strip leading 'v'
 	f.rancherVersion = strings.TrimPrefix(f.rancherVersion, "v")
-	isPrerelease := version.IsPrerelease(f.rancherVersion)
+	isPrerelease := k8sresolver.IsPrerelease(f.rancherVersion)
 
 	fmt.Println()
 	printBanner()
@@ -102,7 +102,7 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Step 3: Resolve k8s version ─────────────────────────────────────────
 	printStep(3, "Resolving Kubernetes version")
-	resolvedK8s, err := version.ResolveK8s(f.k8sVersion, matrix)
+	resolvedK8s, err := k8sresolver.ResolveK8s(f.k8sVersion, matrix)
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Step 4: Resolve k3s/k3d version ─────────────────────────────────────
 	printStep(4, "Resolving k3s/k3d version")
-	clusterVersion, err := version.ResolveClusterVersion(mode, resolvedK8s)
+	clusterVersion, err := k8sresolver.ResolveClusterVersion(mode, resolvedK8s)
 	if err != nil {
 		return err
 	}

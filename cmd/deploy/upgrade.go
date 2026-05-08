@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
-	"github.com/mallardduck/rancher-deployer/internal/version"
 )
 
 type upgradeFlags struct {
@@ -59,7 +59,7 @@ func newUpgradeCmd() *cobra.Command {
 
 func runUpgrade(f *upgradeFlags) error {
 	f.rancherVersion = strings.TrimPrefix(f.rancherVersion, "v")
-	isPrerelease := version.IsPrerelease(f.rancherVersion)
+	isPrerelease := k8sresolver.IsPrerelease(f.rancherVersion)
 
 	fmt.Println()
 	printBanner()

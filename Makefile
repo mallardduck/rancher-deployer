@@ -1,6 +1,13 @@
 BINARY  := rancher-deployer
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-X main.version=$(VERSION) -s -w"
+COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+DATE    := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+
+LDFLAGS := -ldflags "\
+	-X github.com/mallardduck/rancher-deployer/internal/version.Version=$(VERSION) \
+	-X github.com/mallardduck/rancher-deployer/internal/version.Commit=$(COMMIT) \
+	-X github.com/mallardduck/rancher-deployer/internal/version.Date=$(DATE) \
+	-s -w"
 
 # Build for the current platform (dev use)
 .PHONY: build
