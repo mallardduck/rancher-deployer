@@ -1,11 +1,41 @@
+# ---- CI Image Config ----
+CI_IMAGE := ghcr.io/rancher/ci-image/go1.26:latest
+WORKDIR := /workspace
+
+# Detect CI environment (common env var used by many CI systems)
+CI ?= false
+
+# Docker run wrapper (only used locally)
+DOCKER_RUN = docker run --rm -i \
+	-v $(PWD):$(WORKDIR) \
+	-w $(WORKDIR) \
+	$(CI_IMAGE)
+
+# Command runner:
+# - In CI: run commands directly
+# - Locally: run via Docker
+ifeq ($(CI),true)
+	RUN =
+else
+	RUN = $(DOCKER_RUN)
+endif
+
+# ---- Build Config ----
 BINARY  := rancher-deployer
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS := -ldflags "-X main.version=$(VERSION) -s -w"
+COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+DATE    := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+
+LDFLAGS := -ldflags "\
+	-X github.com/mallardduck/rancher-deployer/internal/version.Version=$(VERSION) \
+	-X github.com/mallardduck/rancher-deployer/internal/version.Commit=$(COMMIT) \
+	-X github.com/mallardduck/rancher-deployer/internal/version.Date=$(DATE) \
+	-s -w"
 
 # Build for the current platform (dev use)
 .PHONY: build
 build:
-	go build $(LDFLAGS) -o $(BINARY) .
+	$(RUN) go build $(LDFLAGS) -o $(BINARY) .
 
 .PHONY: install
 install:
@@ -13,15 +43,15 @@ install:
 
 .PHONY: test
 test:
-	go test ./... -v
+	$(RUN) go test ./... -v
 
 .PHONY: lint
 lint:
-	golangci-lint run ./...
+	$(RUN) golangci-lint run ./...
 
 .PHONY: tidy
 tidy:
-	go mod tidy
+	$(RUN) go mod tidy
 
 .PHONY: clean
 clean:
@@ -30,7 +60,7 @@ clean:
 
 .PHONY: deps
 deps:
-	go mod download
+	$(RUN) go mod download
 
 # Cut a release — requires a clean working tree and a pushed tag.
 .PHONY: release

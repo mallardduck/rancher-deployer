@@ -2,11 +2,10 @@ package deploy
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/mallardduck/rancher-deployer/internal/detect"
+	"github.com/mallardduck/rancher-deployer/internal/deployment"
 	"github.com/mallardduck/rancher-deployer/internal/runner"
 )
 
@@ -42,11 +41,15 @@ func newTeardownCmd() *cobra.Command {
 func runTeardown(f *teardownFlags) error {
 	fmt.Println()
 
-	mode, err := resolveTeardownMode(f.mode)
+	mode, reason, err := deployment.ResolveMode(f.mode, true)
 	if err != nil {
 		return err
 	}
-	printInfo("Mode: %s", mode)
+	if reason != "" {
+		printInfo("Auto-detected: %s (%s)", mode, reason)
+	} else {
+		printInfo("Mode: %s", mode)
+	}
 
 	fmt.Printf("%s━━ Teardown Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
 	fmt.Printf("  Rancher namespace : %s\n", f.namespace)
@@ -90,19 +93,4 @@ func runTeardown(f *teardownFlags) error {
 	printSuccess("Teardown complete.")
 	fmt.Println()
 	return nil
-}
-
-func resolveTeardownMode(flag string) (string, error) {
-	switch strings.ToLower(flag) {
-	case "k3s":
-		return "k3s", nil
-	case "k3d":
-		return "k3d", nil
-	case "":
-		mode, reason := detect.InstallMode()
-		printInfo("Auto-detected: %s (%s)", mode, reason)
-		return mode, nil
-	default:
-		return "", fmt.Errorf("invalid --mode %q: must be 'k3s' or 'k3d'", flag)
-	}
 }

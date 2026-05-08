@@ -37,4 +37,5 @@ func init() {
 	rootCmd.AddCommand(newUpgradeCmd())
 	rootCmd.AddCommand(newResolveCmd())
 	rootCmd.AddCommand(newTeardownCmd())
+	rootCmd.AddCommand(newVersionCmd())
 }

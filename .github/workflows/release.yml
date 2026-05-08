@@ -9,22 +9,75 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  goreleaser:
     name: GoReleaser
+    needs: [lint, ci]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    container:
+      image: ghcr.io/rancher/ci-image/go1.26:latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0  # full history so goreleaser can generate the changelog
 
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - uses: goreleaser/goreleaser-action@1a80836c5c9d9e5755a25cb59ec6f45a3b5f41a8 # v7.2.1
-        with:
-          version: "~> v2"
-          args: release --clean
+      - name: Run goreleaser
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |-
+          goreleaser release --clean
+          if [[ ! -f dist/metadata.json ]] || [[ ! -s dist/metadata.json ]]; then
+            echo "Missing required file: dist/metadata.json"
+            exit 1
+          fi
+          if [[ ! -f dist/artifacts.json ]] || [[ ! -s dist/artifacts.json ]]; then
+            echo "Missing required file: dist/artifacts.json"
+            exit 1
+          fi
+          echo "metadata=$(tr -d '\n\r' < dist/metadata.json)" >> "${GITHUB_OUTPUT}"
+          echo "artifacts=$(tr -d '\n\r' < dist/artifacts.json)" >> "${GITHUB_OUTPUT}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: dist/rancher-deployer_*
+
+  release:
+    name: Un-draft release
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/rancher/ci-image/go1.26:latest
+    needs: [ ci, goreleaser ]
+    permissions:
+      contents: write
+    steps:
+      - name: Fully publish release (retry until visible)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          
+          for i in {1..12}; do
+            if gh release view -R "${{ github.repository }}" "$tag" >/dev/null 2>&1; then
+              gh release edit -R "${{ github.repository }}" "$tag" --draft=false
+              exit 0
+            fi
+            echo "Release '$tag' not found yet (attempt $i/12). Sleeping 10s..."
+            sleep 10
+          done
+          
+          echo "Release '$tag' still not found after retries; failing."
+          exit 1

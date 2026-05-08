@@ -7,8 +7,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mallardduck/rancher-deployer/internal/detect"
+	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
-	"github.com/mallardduck/rancher-deployer/internal/version"
 )
 
 func newResolveCmd() *cobra.Command {
@@ -34,7 +34,7 @@ func newResolveCmd() *cobra.Command {
 				rancherVersion, strings.Join(matrix.SupportedMinors(), ", "))
 
 			printStep(2, "Resolving Kubernetes version")
-			resolvedK8s, err := version.ResolveK8s(k8sVersion, matrix)
+			resolvedK8s, err := k8sresolver.ResolveK8s(k8sVersion, matrix)
 			if err != nil {
 				return err
 			}
@@ -44,14 +44,14 @@ func newResolveCmd() *cobra.Command {
 			if mode == "" {
 				mode, _ = detect.InstallMode()
 			}
-			clusterVer, err := version.ResolveClusterVersion(mode, resolvedK8s)
+			clusterVer, err := k8sresolver.ResolveClusterVersion(mode, resolvedK8s)
 			if err != nil {
 				return err
 			}
 			printInfo("Resolved %s version: %s", mode, clusterVer)
 
 			printStep(4, "Prerelease status")
-			if version.IsPrerelease(rancherVersion) {
+			if k8sresolver.IsPrerelease(rancherVersion) {
 				printInfo("Version %s is a prerelease", rancherVersion)
 			} else {
 				printInfo("Version %s is a stable release", rancherVersion)
