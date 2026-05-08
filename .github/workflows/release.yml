@@ -24,7 +24,7 @@ jobs:
       id-token: write
       attestations: write
     container:
-      image: ghcr.io/rancher/ci-image/go1.26
+      image: ghcr.io/rancher/ci-image/go1.26:latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -57,7 +57,7 @@ jobs:
     name: Un-draft release
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/rancher/ci-image/go1.26
+      image: ghcr.io/rancher/ci-image/go1.26:latest
     needs: [ ci, goreleaser ]
     permissions:
       contents: write
