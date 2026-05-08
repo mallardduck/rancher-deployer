@@ -19,8 +19,8 @@ func newResolveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "resolve",
 		Short: "Resolve and print version information without installing anything",
-		Example: `  rancher-deploy resolve --rancher-version 2.8.5
-  rancher-deploy resolve --rancher-version 2.8.5 --k8s-version 1.27`,
+		Example: `  rancher-deployer resolve --rancher-version 2.8.5
+  rancher-deployer resolve --rancher-version 2.8.5 --k8s-version 1.27`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rancherVersion = strings.TrimPrefix(rancherVersion, "v")
 

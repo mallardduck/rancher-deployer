@@ -23,9 +23,9 @@ func newTeardownCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "teardown",
 		Short: "Remove a Rancher deployment and its cluster (reverse of deploy)",
-		Example: `  rancher-deploy teardown
-  rancher-deploy teardown --mode k3d --cluster-name rancher-local
-  rancher-deploy teardown --yes`,
+		Example: `  rancher-deployer teardown
+  rancher-deployer teardown --mode k3d --cluster-name rancher-local
+  rancher-deployer teardown --yes`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runTeardown(f)
 		},
