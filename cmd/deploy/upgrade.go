@@ -9,6 +9,7 @@ import (
 	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
+	"github.com/mallardduck/rancher-deployer/internal/upgrade"
 )
 
 type upgradeFlags struct {
@@ -76,7 +77,7 @@ func runUpgrade(f *upgradeFlags) error {
 	printStep(2, "Validating upgrade path")
 	if f.force {
 		printWarning("--force set: skipping upgrade-path validation")
-	} else if err := validateUpgradePath(currentVersion, f.rancherVersion); err != nil {
+	} else if err := upgrade.ValidatePath(currentVersion, f.rancherVersion); err != nil {
 		return err
 	} else {
 		printInfo("v%s → v%s is a valid upgrade path", currentVersion, f.rancherVersion)
@@ -178,74 +179,6 @@ func runUpgrade(f *upgradeFlags) error {
 	fmt.Println()
 
 	return nil
-}
-
-// validateUpgradePath enforces Rancher's upgrade rules:
-//   - Downgrades are not supported
-//   - Minor version skips are not supported (must upgrade one minor at a time)
-//   - Patch-level upgrades within the same minor are always valid
-func validateUpgradePath(current, target string) error {
-	cv := parseMinorParts(current)
-	tv := parseMinorParts(target)
-
-	if cv[0] != tv[0] {
-		return fmt.Errorf(
-			"cross-major upgrades are not supported (v%s → v%s)",
-			current, target,
-		)
-	}
-
-	minorDelta := tv[1] - cv[1]
-	switch {
-	case minorDelta < 0:
-		return fmt.Errorf(
-			"downgrade not supported: v%s is older than installed v%s",
-			target, current,
-		)
-	case minorDelta > 1:
-		return fmt.Errorf(
-			"cannot skip minor versions: v%s → v%s skips %d minor release(s)\n"+
-				"  Upgrade to v%d.%d.x first",
-			current, target, minorDelta-1, cv[0], cv[1]+1,
-		)
-	}
-
-	// Same minor: target patch must be >= current patch
-	if minorDelta == 0 {
-		cp := parsePatchPart(current)
-		tp := parsePatchPart(target)
-		if tp < cp {
-			return fmt.Errorf(
-				"downgrade not supported: v%s is older than installed v%s",
-				target, current,
-			)
-		}
-	}
-
-	return nil
-}
-
-// parseMinorParts returns [major, minor] as ints from a version string.
-func parseMinorParts(v string) [2]int {
-	v = strings.TrimPrefix(v, "v")
-	parts := strings.Split(v, ".")
-	var out [2]int
-	for i := 0; i < 2 && i < len(parts); i++ {
-		_, _ = fmt.Sscanf(parts[i], "%d", &out[i])
-	}
-	return out
-}
-
-// parsePatchPart returns the patch integer from a version string.
-func parsePatchPart(v string) int {
-	v = strings.TrimPrefix(v, "v")
-	parts := strings.Split(v, ".")
-	if len(parts) < 3 {
-		return 0
-	}
-	var patch int
-	_, _ = fmt.Sscanf(parts[2], "%d", &patch)
-	return patch
 }
 
 func printUpgradePlan(f *upgradeFlags, currentVersion, clusterK8s string, chart rancher.Chart) {

@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/mallardduck/rancher-deployer/internal/detect"
+	"github.com/mallardduck/rancher-deployer/internal/deployment"
 	"github.com/mallardduck/rancher-deployer/internal/k3d"
 	"github.com/mallardduck/rancher-deployer/internal/k3s"
 	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
@@ -85,11 +85,15 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Step 1: Detect install mode ─────────────────────────────────────────
 	printStep(1, "Detecting install mode")
-	mode, err := resolveMode(f.mode)
+	mode, reason, err := deployment.ResolveMode(f.mode, true)
 	if err != nil {
 		return err
 	}
-	printInfo("Mode: %s", mode)
+	if reason != "" {
+		printInfo("Auto-detected: %s (%s)", mode, reason)
+	} else {
+		printInfo("Mode: %s", mode)
+	}
 
 	// ── Step 2: Resolve Rancher support matrix ───────────────────────────────
 	printStep(2, "Fetching Rancher support matrix")
@@ -227,22 +231,6 @@ func runDeploy(f *deployFlags) error {
 	fmt.Println()
 
 	return nil
-}
-
-// resolveMode returns the effective install mode, auto-detecting if not forced.
-func resolveMode(flag string) (string, error) {
-	switch strings.ToLower(flag) {
-	case "k3s":
-		return "k3s", nil
-	case "k3d":
-		return "k3d", nil
-	case "":
-		mode, reason := detect.InstallMode()
-		printInfo("Auto-detected: %s (%s)", mode, reason)
-		return mode, nil
-	default:
-		return "", fmt.Errorf("invalid --mode %q: must be 'k3s' or 'k3d'", flag)
-	}
 }
 
 func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer string, chart rancher.Chart, hv rancher.HelmValues) {
