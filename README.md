@@ -1,6 +1,6 @@
 # rancher-deployer
 
-A Go CLI that deploys Rancher on top of k3s or k3d with automatic version resolution.  
+A Go CLI that deploys Rancher on top of k3s or k3d with automatic version resolution.
 Single binary, no runtime dependencies beyond the target tooling (`helm`, `kubectl`, `k3s`/`k3d`).
 
 ---
@@ -8,7 +8,7 @@ Single binary, no runtime dependencies beyond the target tooling (`helm`, `kubec
 ## How it works
 
 ```
-rancher-deploy deploy --rancher-version 2.8.5
+rancher-deployer deploy --rancher-version 2.8.5
 ```
 
 1. **Fetches Rancher's KDM** (Kontainer Driver Metadata) for the requested Rancher minor version from `releases.rancher.com`, with a GitHub fallback.
@@ -31,9 +31,9 @@ rancher-deploy deploy --rancher-version 2.8.5
 ### From source (requires Go 1.25+)
 
 ```bash
-git clone https://github.com/example/rancher-deploy
-cd rancher-deploy
-make build          # produces ./rancher-deploy
+git clone https://github.com/mallardduck/rancher-deployer
+cd rancher-deployer
+make build          # produces ./rancher-deployer
 make install        # installs to $GOPATH/bin
 ```
 
@@ -65,7 +65,7 @@ The binary shells out to these tools — they must be in `PATH` on the target no
 ### `deploy` — full install
 
 ```
-rancher-deploy deploy --rancher-version <version> [flags]
+rancher-deployer deploy --rancher-version <version> [flags]
 ```
 
 | Flag                     | Default           | Description |
@@ -84,7 +84,7 @@ rancher-deploy deploy --rancher-version <version> [flags]
 ### `resolve` — inspect resolved versions (no install)
 
 ```
-rancher-deploy resolve --rancher-version <version> [--k8s-version <minor>] [--mode k3s|k3d]
+rancher-deployer resolve --rancher-version <version> [--k8s-version <minor>] [--mode k3s|k3d]
 ```
 
 Useful for scripting or verifying what versions would be selected before committing to a full deploy.
@@ -95,17 +95,17 @@ Useful for scripting or verifying what versions would be selected before committ
 
 ```bash
 # Minimal — everything auto-resolved
-rancher-deploy deploy --rancher-version 2.8.5
+rancher-deployer deploy --rancher-version 2.8.5
 
 # Rancher Prime, pinned to k8s 1.27, force k3d
-rancher-deploy deploy \
+rancher-deployer deploy \
   --rancher-version 2.8.5 \
   --prime \
   --k8s-version 1.27 \
   --mode k3d
 
 # Custom hostname + values file + individual overrides
-rancher-deploy deploy \
+rancher-deployer deploy \
   --rancher-version 2.8.5 \
   --hostname rancher.example.com \
   --values-file ./production-values.yaml \
@@ -115,11 +115,11 @@ rancher-deploy deploy \
   --set letsEncrypt.email=admin@example.com
 
 # Dry run — see the full plan before touching anything
-rancher-deploy deploy --rancher-version 2.8.5 --dry-run
+rancher-deployer deploy --rancher-version 2.8.5 --dry-run
 
 # Just check what versions would be used
-rancher-deploy resolve --rancher-version 2.8.5
-rancher-deploy resolve --rancher-version 2.8.5 --k8s-version 1.27
+rancher-deployer resolve --rancher-version 2.8.5
+rancher-deployer resolve --rancher-version 2.8.5 --k8s-version 1.27
 ```
 
 ---
@@ -181,7 +181,7 @@ kubectl delete -f https://github.com/cert-manager/cert-manager/releases/download
 ## Project structure
 
 ```
-rancher-deploy/
+rancher-deployer/
 ├── main.go                     # Entrypoint
 ├── cmd/deploy/
 │   ├── root.go                 # Cobra root command + Execute()
@@ -208,9 +208,8 @@ rancher-deploy/
 ---
 
 ## Extending
-
-**Adding SSH/remote mode:**  
+**Adding SSH/remote mode:**
 The `runner` package is the only place that shells out. A `runner.Remote` that wraps `golang.org/x/crypto/ssh` (or shells to the system `ssh` binary) would slot in cleanly — the rest of the codebase doesn't need to change.
 
-**Adding upgrade support:**  
+**Adding upgrade support:**
 Each package's `EnsureNotInstalled` / `ensureAbsent` guard is the only thing blocking re-runs. An `--upgrade` flag that skips those guards and swaps `helm install` → `helm upgrade` is a contained change to `rancher.go` and `k3s.go`/`k3d.go`.

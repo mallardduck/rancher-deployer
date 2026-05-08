@@ -38,19 +38,19 @@ func newDeployCmd() *cobra.Command {
 		Use:   "deploy",
 		Short: "Install k3s/k3d and deploy Rancher",
 		Example: `  # Minimal — auto-selects k8s + k3s versions
-  rancher-deploy deploy --rancher-version 2.8.5
+  rancher-deployer deploy --rancher-version 2.8.5
 
   # Force k3d, target k8s 1.28, Rancher Prime
-  rancher-deploy deploy --rancher-version 2.8.5 --mode k3d --k8s-version 1.28 --prime
+  rancher-deployer deploy --rancher-version 2.8.5 --mode k3d --k8s-version 1.28 --prime
 
   # With a values file and individual overrides
-  rancher-deploy deploy --rancher-version 2.8.5 \
+  rancher-deployer deploy --rancher-version 2.8.5 \
     --values-file ./values.yaml \
     --set replicas=1 \
     --set auditLog.level=1
 
   # Dry run — print resolved plan without executing
-  rancher-deploy deploy --rancher-version 2.8.5 --dry-run`,
+  rancher-deployer deploy --rancher-version 2.8.5 --dry-run`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDeploy(f)
 		},
