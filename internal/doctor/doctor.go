@@ -1,4 +1,8 @@
 // Package doctor provides health checks and dependency validation for rancher-deployer.
+//
+// TODO: Future enhancement - Auto-fix missing dependencies
+// Add a --fix flag that automatically downloads missing binaries using github.com/mallardduck/ghreleases
+// and stores them in a local .bin/ directory. See TODO.md for full implementation plan.
 package doctor
 
 import (

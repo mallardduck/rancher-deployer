@@ -26,6 +26,8 @@ const (
 )
 
 // BinaryChecker validates that a binary exists in PATH.
+// TODO: When --fix flag is implemented, this checker should return remediation
+// with downloadable binaries using github.com/mallardduck/ghreleases
 type BinaryChecker struct {
 	binary      string
 	displayName string
