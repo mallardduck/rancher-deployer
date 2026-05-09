@@ -3,7 +3,6 @@ package deploy
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -97,13 +96,12 @@ func runDoctor(flags *doctorFlags) error {
 	fmt.Println()
 	printInfo("Summary: %d passed, %d warnings, %d failed", passed, warned, failed)
 
-	// Final message
+	// Final message and exit
 	fmt.Println()
 	if doctor.HasCriticalFailures(results) {
 		printWarning("Critical checks failed. Please address the errors above before deploying.")
-		// Exit with error code but don't show usage
-		fmt.Println()
-		os.Exit(1)
+		// Return error to exit with code 1 (but avoid os.Exit to allow defers to run)
+		return fmt.Errorf("health check failed")
 	}
 
 	if warned > 0 {

@@ -121,50 +121,64 @@ func getInstallRemediation(binary string) string {
 
 	switch binary {
 	case "kubectl":
-		if pm == "brew" {
+		switch pm {
+		case "brew":
 			return "Install: brew install kubectl"
+		default:
+			return "Install: https://kubernetes.io/docs/tasks/tools/install-kubectl/"
 		}
-		return "Install: https://kubernetes.io/docs/tasks/tools/install-kubectl/"
 	case "helm":
-		if pm == "brew" {
+		switch pm {
+		case "brew":
 			return "Install: brew install helm"
+		default:
+			return "Install: https://helm.sh/docs/intro/install/"
 		}
-		return "Install: https://helm.sh/docs/intro/install/"
 	case "k3s":
 		return "k3s will be automatically installed during deployment"
 	case "k3d":
 		return "k3d will be automatically installed during deployment"
 	case "docker":
-		if pm == "brew" {
+		switch pm {
+		case "brew":
 			return "Install: brew install --cask docker"
+		default:
+			return "Install: https://docs.docker.com/get-docker/"
 		}
-		return "Install: https://docs.docker.com/get-docker/"
 	case "podman":
-		if pm == "brew" {
+		switch pm {
+		case "brew":
 			return "Install: brew install podman"
+		default:
+			return "Install: https://podman.io/getting-started/installation"
 		}
-		return "Install: https://podman.io/getting-started/installation"
 	case "curl":
-		if pm == "brew" {
+		switch pm {
+		case "brew":
 			return "Install: brew install curl"
-		} else if pm == "apt" {
+		case "apt":
 			return "Install: sudo apt-get install curl"
-		} else if pm == "yum" {
+		case "yum":
 			return "Install: sudo yum install curl"
+		default:
+			return "Install curl using your package manager"
 		}
-		return "Install curl using your package manager"
 	case "systemctl":
 		return "systemctl is part of systemd - ensure you're running on a systemd-based Linux distribution"
 	case "sudo":
-		if pm == "apt" {
+		switch pm {
+		case "apt":
 			return "Install: apt-get install sudo"
+		default:
+			return "Install sudo using your package manager"
 		}
-		return "Install sudo using your package manager"
 	case "bash":
-		if pm == "brew" {
+		switch pm {
+		case "brew":
 			return "Install: brew install bash"
+		default:
+			return "bash should be pre-installed on most systems"
 		}
-		return "bash should be pre-installed on most systems"
 	case "sh":
 		return "sh should be pre-installed on all Unix-like systems"
 	default:
@@ -385,6 +399,9 @@ func (c *ConfigFileChecker) Check(ctx context.Context, opts *CheckOptions) Check
 		kubeconfigPath = filepath.Join(home, ".kube", "config")
 	}
 
+	// Clean path to prevent traversal
+	kubeconfigPath = filepath.Clean(kubeconfigPath)
+
 	if _, err := os.Stat(kubeconfigPath); err == nil {
 		return CheckResult{
 			Name:     c.Name(),
@@ -435,7 +452,7 @@ func (c *CacheDirectoryChecker) Check(ctx context.Context, opts *CheckOptions) C
 	appCacheDir := filepath.Join(cacheDir, "rancher-deployer")
 
 	// Try to create cache directory if it doesn't exist
-	if err := os.MkdirAll(appCacheDir, 0755); err != nil {
+	if err := os.MkdirAll(appCacheDir, 0750); err != nil {
 		return CheckResult{
 			Name:        c.Name(),
 			Category:    c.Category(),
@@ -447,7 +464,7 @@ func (c *CacheDirectoryChecker) Check(ctx context.Context, opts *CheckOptions) C
 
 	// Test writability
 	testFile := filepath.Join(appCacheDir, ".write-test")
-	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+	if err := os.WriteFile(testFile, []byte("test"), 0600); err != nil {
 		return CheckResult{
 			Name:        c.Name(),
 			Category:    c.Category(),
@@ -456,7 +473,7 @@ func (c *CacheDirectoryChecker) Check(ctx context.Context, opts *CheckOptions) C
 			Remediation: "Ensure you have write permissions to your cache directory",
 		}
 	}
-	os.Remove(testFile) // Clean up
+	_ = os.Remove(testFile) // Clean up (ignore error)
 
 	return CheckResult{
 		Name:     c.Name(),

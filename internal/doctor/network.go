@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 )
 
 // EndpointChecker validates network connectivity to required endpoints.
@@ -155,7 +154,7 @@ func (c *GitHubRateLimitChecker) Check(ctx context.Context, opts *CheckOptions) 
 	if remaining < 10 {
 		status := StatusWarn
 		msg := fmt.Sprintf("%d/%d requests remaining (nearly exhausted)", remaining, limit)
-		remediation := "GitHub API rate limit is low"
+		var remediation string
 
 		if !authenticated {
 			remediation = "Set GH_TOKEN or GITHUB_TOKEN environment variable to increase limit to 5000/hour"
@@ -196,14 +195,4 @@ func (c *GitHubRateLimitChecker) Check(ctx context.Context, opts *CheckOptions) 
 		Status:   StatusPass,
 		Message:  msg,
 	}
-}
-
-// formatHTTPError formats an HTTP error message.
-func formatHTTPError(err error) string {
-	msg := err.Error()
-	// Simplify common error messages
-	msg = strings.ReplaceAll(msg, "dial tcp: lookup", "DNS lookup failed for")
-	msg = strings.ReplaceAll(msg, "i/o timeout", "connection timeout")
-	msg = strings.ReplaceAll(msg, "connection refused", "connection refused")
-	return msg
 }

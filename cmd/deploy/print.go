@@ -38,7 +38,3 @@ func printSuccess(format string, args ...any) {
 func printWarning(format string, args ...any) {
 	fmt.Printf("%s%s⚠ %s%s\n", colorBold, colorYellow, fmt.Sprintf(format, args...), colorReset)
 }
-
-func printError(format string, args ...any) {
-	fmt.Printf("%s%s✗ %s%s\n", colorBold, colorRed, fmt.Sprintf(format, args...), colorReset)
-}

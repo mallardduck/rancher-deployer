@@ -132,7 +132,8 @@ func (d *Doctor) registerDependencyCheckers(mode string) {
 	})
 
 	// Mode-specific binaries
-	if mode == "k3s" {
+	switch mode {
+	case "k3s":
 		d.addChecker(&BinaryChecker{
 			binary:      "k3s",
 			displayName: "k3s",
@@ -173,7 +174,7 @@ func (d *Doctor) registerDependencyCheckers(mode string) {
 			modes:       []string{"k3s"},
 			location:    LocationRemote,
 		})
-	} else if mode == "k3d" {
+	case "k3d":
 		d.addChecker(&BinaryChecker{
 			binary:      "k3d",
 			displayName: "k3d",
@@ -251,11 +252,12 @@ func (d *Doctor) registerNetworkCheckers() {
 func (d *Doctor) registerStateCheckers(mode string) {
 	d.addChecker(&ClusterAccessChecker{})
 
-	if mode == "k3s" && runtime.GOOS == "linux" {
-		d.addChecker(&K3sServiceChecker{})
-	}
-
-	if mode == "k3d" {
+	switch mode {
+	case "k3s":
+		if runtime.GOOS == "linux" {
+			d.addChecker(&K3sServiceChecker{})
+		}
+	case "k3d":
 		d.addChecker(&K3dClusterChecker{})
 	}
 
