@@ -71,3 +71,73 @@ release:
 .PHONY: snapshot
 snapshot:
 	goreleaser release --snapshot --clean
+
+# ---- Docker Config ----
+IMAGE_PREFIX ?= rancher-deployer
+IMAGE_TAG    ?= $(VERSION)
+ARCH         ?= amd64
+
+# Docker build arguments
+DOCKER_BUILD_ARGS := --build-arg ARCH=$(ARCH)
+
+# ---- Docker Build Targets ----
+# Build k3s-base: minimal k3s-in-docker foundation
+.PHONY: docker-build-k3s-base
+docker-build-k3s-base:
+	docker build $(DOCKER_BUILD_ARGS) \
+		--target k3s-base \
+		-t $(IMAGE_PREFIX)/k3s-base:$(IMAGE_TAG) \
+		-f package/Dockerfile .
+
+# Build k3s-tools: k3s-base + debugging/client tools (k9s, helm)
+.PHONY: docker-build-k3s-tools
+docker-build-k3s-tools:
+	docker build $(DOCKER_BUILD_ARGS) \
+		--target k3s-tools \
+		-t $(IMAGE_PREFIX)/k3s-tools:$(IMAGE_TAG) \
+		-f package/Dockerfile .
+
+# Build rancher-deployer: full deployment stack
+.PHONY: docker-build-rancher-deployer
+docker-build-rancher-deployer:
+	docker build $(DOCKER_BUILD_ARGS) \
+		--target rancher-deployer \
+		-t $(IMAGE_PREFIX)/rancher-deployer:$(IMAGE_TAG) \
+		-f package/Dockerfile .
+
+# Build all Docker images
+.PHONY: docker-build-all
+docker-build-all: docker-build-k3s-base docker-build-k3s-tools docker-build-rancher-deployer
+
+# Default docker-build target (builds the full stack)
+.PHONY: docker-build
+docker-build: docker-build-rancher-deployer
+
+# ---- Docker Push Targets ----
+.PHONY: docker-push-k3s-base
+docker-push-k3s-base: docker-build-k3s-base
+	docker push $(IMAGE_PREFIX)/k3s-base:$(IMAGE_TAG)
+
+.PHONY: docker-push-k3s-tools
+docker-push-k3s-tools: docker-build-k3s-tools
+	docker push $(IMAGE_PREFIX)/k3s-tools:$(IMAGE_TAG)
+
+.PHONY: docker-push-rancher-deployer
+docker-push-rancher-deployer: docker-build-rancher-deployer
+	docker push $(IMAGE_PREFIX)/rancher-deployer:$(IMAGE_TAG)
+
+.PHONY: docker-push-all
+docker-push-all: docker-push-k3s-base docker-push-k3s-tools docker-push-rancher-deployer
+
+# ---- Docker Run Helpers ----
+.PHONY: docker-run-k3s-base
+docker-run-k3s-base:
+	docker run -d --privileged --name k3s-base $(IMAGE_PREFIX)/k3s-base:$(IMAGE_TAG)
+
+.PHONY: docker-run-k3s-tools
+docker-run-k3s-tools:
+	docker run -d --privileged --name k3s-tools $(IMAGE_PREFIX)/k3s-tools:$(IMAGE_TAG)
+
+.PHONY: docker-run-rancher-deployer
+docker-run-rancher-deployer:
+	docker run -d --privileged -p 80:80 -p 443:443 --name rancher-deployer $(IMAGE_PREFIX)/rancher-deployer:$(IMAGE_TAG)

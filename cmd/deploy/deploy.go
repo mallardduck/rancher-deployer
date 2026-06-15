@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mallardduck/rancher-deployer/internal/deployment"
+	"github.com/mallardduck/rancher-deployer/internal/existing"
 	"github.com/mallardduck/rancher-deployer/internal/k3d"
 	"github.com/mallardduck/rancher-deployer/internal/k3s"
 	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
@@ -112,13 +113,26 @@ func runDeploy(f *deployFlags) error {
 	}
 	printInfo("Target k8s version: %s", resolvedK8s)
 
-	// ── Step 4: Resolve k3s/k3d version ─────────────────────────────────────
-	printStep(4, "Resolving k3s/k3d version")
-	clusterVersion, err := k8sresolver.ResolveClusterVersion(mode, resolvedK8s)
-	if err != nil {
-		return err
+	// ── Step 4: Resolve k3s/k3d version (skip for existing mode) ─────────────
+	var clusterVersion string
+	if mode == "existing" {
+		printStep(4, "Validating existing cluster")
+		clusterVersion, err = existing.ValidateCluster()
+		if err != nil {
+			return err
+		}
+		// Validate that cluster k8s version is compatible with Rancher requirements
+		if err := existing.ValidateVersion(clusterVersion, resolvedK8s); err != nil {
+			return err
+		}
+	} else {
+		printStep(4, "Resolving k3s/k3d version")
+		clusterVersion, err = k8sresolver.ResolveClusterVersion(mode, resolvedK8s)
+		if err != nil {
+			return err
+		}
+		printInfo("Cluster version: %s", clusterVersion)
 	}
-	printInfo("Cluster version: %s", clusterVersion)
 
 	// ── Step 5: Resolve cert-manager version ─────────────────────────────────
 	printStep(5, "Resolving cert-manager version")
@@ -168,9 +182,11 @@ func runDeploy(f *deployFlags) error {
 		return nil
 	}
 
-	// ── Step 8: Install cluster ──────────────────────────────────────────────
+	// ── Step 8: Install cluster (skip for existing mode) ─────────────────────
 	printStep(8, "Installing cluster")
 	switch mode {
+	case "existing":
+		printInfo("Using existing Kubernetes cluster (kubectl already configured)")
 	case "k3d":
 		if err := k3d.EnsureInstalled(); err != nil {
 			return err

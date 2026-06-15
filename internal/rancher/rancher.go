@@ -173,7 +173,14 @@ func injectHostname(sets []string, hostname string) []string {
 }
 
 // outboundIP returns the preferred outbound IP of the local machine.
+// In containers, always returns 127.0.0.1 since the container's bridge IP
+// (172.17.0.x) is not accessible from the host.
 func outboundIP() (string, error) {
+	// Detect if running in a container
+	if inContainer() {
+		return "127.0.0.1", nil
+	}
+
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
 		return "", err
@@ -181,6 +188,20 @@ func outboundIP() (string, error) {
 	defer conn.Close()
 	addr := conn.LocalAddr().(*net.UDPAddr)
 	return addr.IP.String(), nil
+}
+
+// inContainer detects if we're running inside a container.
+// Checks for /.dockerenv file or CONTAINER environment variable.
+func inContainer() bool {
+	// Docker creates /.dockerenv in containers
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+	// Also check for explicit CONTAINER env var
+	if os.Getenv("CONTAINER") != "" {
+		return true
+	}
+	return false
 }
 
 // ── cert-manager ─────────────────────────────────────────────────────────────
@@ -361,14 +382,12 @@ func Install(namespace string, chart Chart, values HelmValues) error {
 		return fmt.Errorf("namespace creation failed: %w", err)
 	}
 
-	// Assemble helm install command
+	// Assemble helm install command (no --wait, we'll monitor progress separately)
 	args := []string{
 		"install", chart.ChartName,
 		fmt.Sprintf("%s/%s", chart.RepoName, chart.ChartName),
 		"--namespace", namespace,
 		"--version", chart.Version,
-		"--wait",
-		"--timeout", "10m",
 	}
 
 	if chart.IsPrerelease {
@@ -382,16 +401,112 @@ func Install(namespace string, chart Chart, values HelmValues) error {
 		args = append(args, "--set", s)
 	}
 
-	return runner.Run("helm", args...)
+	if err := runner.Run("helm", args...); err != nil {
+		return err
+	}
+
+	fmt.Println()
+	fmt.Println("  Helm release created. Monitoring deployment progress...")
+	fmt.Println()
+
+	return nil
 }
 
-// WaitReady waits for the Rancher deployment to report available replicas.
+// WaitReady waits for the Rancher deployment to report available replicas,
+// showing progress updates along the way.
 func WaitReady(namespace string) error {
-	return runner.Run("kubectl", "rollout", "status",
-		"deployment/rancher",
+	fmt.Println("  Waiting for Rancher pods to start...")
+
+	// Show pod status updates every 10 seconds
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	done := make(chan error, 1)
+
+	// Run rollout status in background
+	go func() {
+		done <- runner.Run("kubectl", "rollout", "status",
+			"deployment/rancher",
+			"-n", namespace,
+			"--timeout=600s",
+		)
+	}()
+
+	lastStatus := ""
+	for {
+		select {
+		case err := <-done:
+			// Rollout completed (or timed out)
+			if err == nil {
+				fmt.Println()
+				fmt.Println("  ✓ Rancher deployment ready")
+			}
+			return err
+
+		case <-ticker.C:
+			// Show current pod status
+			status := getPodStatus(namespace)
+			if status != "" && status != lastStatus {
+				fmt.Printf("  %s\n", status)
+				lastStatus = status
+			}
+		}
+	}
+}
+
+// getPodStatus returns a human-readable summary of Rancher pod status.
+func getPodStatus(namespace string) string {
+	// Get deployment status
+	out, err := runner.Output("kubectl", "get", "deployment", "rancher",
 		"-n", namespace,
-		"--timeout=600s",
+		"-o", "jsonpath={.status.replicas}/{.status.readyReplicas}/{.status.availableReplicas}",
 	)
+	if err != nil || out == "" {
+		return "Waiting for deployment to be created..."
+	}
+
+	parts := strings.Split(out, "/")
+	if len(parts) < 3 {
+		return "Deployment initializing..."
+	}
+
+	total := parts[0]
+	ready := parts[1]
+	available := parts[2]
+
+	if ready == "" {
+		ready = "0"
+	}
+	if available == "" {
+		available = "0"
+	}
+
+	// Also get pod phase info for more detail
+	podOut, _ := runner.Output("kubectl", "get", "pods",
+		"-n", namespace,
+		"-l", "app=rancher",
+		"--no-headers",
+	)
+
+	var detail string
+	if podOut != "" {
+		lines := strings.Split(strings.TrimSpace(podOut), "\n")
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) >= 3 {
+				status := fields[2] // STATUS column
+				if status == "ContainerCreating" || status == "PodInitializing" {
+					detail = " (pulling images)"
+					break
+				} else if status == "Init:0/1" || strings.HasPrefix(status, "Init:") {
+					detail = " (initializing)"
+					break
+				}
+			}
+		}
+	}
+
+	return fmt.Sprintf("Pods: %s/%s ready%s", ready, total, detail)
 }
 
 // InstalledVersion returns the currently installed Rancher app version from
@@ -469,15 +584,13 @@ func Upgrade(namespace string, chart Chart, values HelmValues) error {
 		return fmt.Errorf("could not close temporary values file: %w", err)
 	}
 
-	// 2. Build upgrade command
+	// 2. Build upgrade command (no --wait, caller will monitor progress)
 	args := []string{
 		"upgrade", chart.ChartName,
 		fmt.Sprintf("%s/%s", chart.RepoName, chart.ChartName),
 		"--namespace", namespace,
 		"--version", chart.Version,
 		"--values", tmpFile.Name(), // applied first
-		"--wait",
-		"--timeout", "10m",
 	}
 
 	if chart.IsPrerelease {
@@ -491,7 +604,15 @@ func Upgrade(namespace string, chart Chart, values HelmValues) error {
 		args = append(args, "--set", s)
 	}
 
-	return runner.Run("helm", args...)
+	if err := runner.Run("helm", args...); err != nil {
+		return err
+	}
+
+	fmt.Println()
+	fmt.Println("  Helm release upgraded. Monitoring rollout progress...")
+	fmt.Println()
+
+	return nil
 }
 
 // ensureRancherAbsent returns an error if a Rancher Helm release already exists.
