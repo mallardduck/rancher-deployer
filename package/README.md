@@ -249,9 +249,9 @@ docker buildx build \
 
 ```
 package/
-├── Dockerfile                      # Multi-stage Dockerfile with 3 targets
+├── Dockerfile                     # Multi-stage Dockerfile with 3 targets
 ├── k3s-entrypoint.sh              # k3s startup logic
-├── rancher-deployer-entrypoint.sh # Deployment wrapper
+├── rancher-entrypoint.sh          # Deployment wrapper
 ├── debug-cert-manager.sh          # Debug utilities
 ├── debug-rancher.sh               # Rancher diagnostics
 └── README.md                      # This file

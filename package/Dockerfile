@@ -143,14 +143,14 @@ ENV HOSTNAME=rancher-local
 ENV CATTLE_NAMESPACE=cattle-system
 
 # Copy rancher-deployer wrapper entrypoint
-COPY package/rancher-deployer-entrypoint.sh /rancher-deployer-entrypoint.sh
-RUN chmod +x /rancher-deployer-entrypoint.sh
+COPY package/rancher-entrypoint.sh /rancher-entrypoint.sh
+RUN chmod +x /rancher-entrypoint.sh
 
 # Expose Rancher ports (HTTP, HTTPS via traefik ingress, and k8s API)
 EXPOSE 80 443 6443
 
 # Override entrypoint to run deployment logic
-ENTRYPOINT ["/rancher-deployer-entrypoint.sh"]
+ENTRYPOINT ["/rancher-entrypoint.sh"]
 
 # ============================================================================
 # Build Instructions:
