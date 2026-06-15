@@ -1,0 +1,43 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+docs/
+examples/
+
+# Build artifacts
+dist/
+bin/
+*.tar.gz
+*.zip
+
+# Go test cache
+.cache/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# CI/CD
+.github/
+.goreleaser.yaml
+
+# Claude Code
+.claude/
+.claude-suse/
