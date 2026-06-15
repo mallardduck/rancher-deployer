@@ -85,8 +85,8 @@ ENV KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 ENV HOSTNAME=k3s-local
 ENV CONTAINER=true
 
-# Copy k3s-base entrypoint
-COPY package/k3s-base/entrypoint.sh /entrypoint.sh
+# Copy k3s entrypoint
+COPY package/k3s-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Expose Kubernetes API port
