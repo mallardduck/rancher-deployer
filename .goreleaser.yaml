@@ -35,28 +35,6 @@ checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
   algorithm: sha256
 
-dockers_v2:
-  - images:
-      - ghcr.io/mallardduck/rancher-demo
-    tags:
-      - "{{ .Version }}"
-      - latest
-    dockerfile: package/Dockerfile
-    platforms:
-      - linux/amd64
-      - linux/arm64
-    flags:
-      - --target=rancher-demo
-    labels:
-      org.opencontainers.image.title: rancher-demo
-      org.opencontainers.image.description: Rancher deployer with k3s
-      org.opencontainers.image.url: https://github.com/mallardduck/rancher-deployer
-      org.opencontainers.image.source: https://github.com/mallardduck/rancher-deployer
-      org.opencontainers.image.version: "{{ .Version }}"
-      org.opencontainers.image.created: "{{ .Date }}"
-      org.opencontainers.image.revision: "{{ .FullCommit }}"
-    sbom: false  # Build provenance is handled by GitHub Actions
-
 changelog:
   use: github
   sort: asc
