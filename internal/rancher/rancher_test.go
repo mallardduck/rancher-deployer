@@ -291,14 +291,14 @@ func TestResolveHostname(t *testing.T) {
 
 func TestBuildHelmValues(t *testing.T) {
 	t.Run("validates values file exists", func(t *testing.T) {
-		_, err := BuildHelmValues("/nonexistent/file.yaml", nil, "", "default", "password")
+		_, err := BuildHelmValues("/nonexistent/file.yaml", nil, "", "default", "password", true)
 		if err == nil {
 			t.Error("BuildHelmValues should error for nonexistent values file")
 		}
 	})
 
 	t.Run("accepts empty values file", func(t *testing.T) {
-		_, err := BuildHelmValues("", nil, "test.local", "default", "password")
+		_, err := BuildHelmValues("", nil, "test.local", "default", "password", true)
 		if err != nil {
 			t.Errorf("BuildHelmValues with empty values file should not error: %v", err)
 		}
@@ -312,7 +312,7 @@ func TestBuildHelmValues(t *testing.T) {
 			t.Fatalf("Failed to create test values file: %v", err)
 		}
 
-		got, err := BuildHelmValues(valuesFile, nil, "test.local", "default", "password")
+		got, err := BuildHelmValues(valuesFile, nil, "test.local", "default", "password", true)
 		if err != nil {
 			t.Errorf("BuildHelmValues should accept existing file: %v", err)
 		}
@@ -321,23 +321,40 @@ func TestBuildHelmValues(t *testing.T) {
 		}
 	})
 
-	t.Run("injects hostname and bootstrapPassword", func(t *testing.T) {
-		got, err := BuildHelmValues("", nil, "test.local", "default", "mypass")
+	t.Run("injects hostname and bootstrapPassword when ingress enabled", func(t *testing.T) {
+		got, err := BuildHelmValues("", nil, "test.local", "default", "mypass", true)
 		if err != nil {
 			t.Fatalf("BuildHelmValues failed: %v", err)
 		}
 
 		if !containsSetFlag(got.SetFlags, "hostname=test.local") {
-			t.Error("BuildHelmValues should inject hostname")
+			t.Error("BuildHelmValues should inject hostname when ingress is enabled")
 		}
 		if !containsSetFlag(got.SetFlags, "bootstrapPassword=mypass") {
 			t.Error("BuildHelmValues should inject bootstrapPassword")
 		}
 	})
 
-	t.Run("does not override user-provided values", func(t *testing.T) {
+	t.Run("disables ingress when enableIngress is false", func(t *testing.T) {
+		got, err := BuildHelmValues("", nil, "", "default", "mypass", false)
+		if err != nil {
+			t.Fatalf("BuildHelmValues failed: %v", err)
+		}
+
+		if !containsSetFlag(got.SetFlags, "ingress.enabled=false") {
+			t.Error("BuildHelmValues should disable ingress when enableIngress is false")
+		}
+		if !containsSetFlag(got.SetFlags, "bootstrapPassword=mypass") {
+			t.Error("BuildHelmValues should inject bootstrapPassword")
+		}
+		if !containsSetFlag(got.SetFlags, "tls=external") {
+			t.Error("BuildHelmValues should set tls=external when ingress is disabled")
+		}
+	})
+
+	t.Run("does not override user-provided values when ingress enabled", func(t *testing.T) {
 		setFlags := []string{"hostname=user.com", "bootstrapPassword=userpass"}
-		got, err := BuildHelmValues("", setFlags, "default.local", "default", "defaultpass")
+		got, err := BuildHelmValues("", setFlags, "default.local", "default", "defaultpass", true)
 		if err != nil {
 			t.Fatalf("BuildHelmValues failed: %v", err)
 		}
