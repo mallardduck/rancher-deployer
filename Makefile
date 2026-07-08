@@ -96,9 +96,9 @@ docker-build-k3s-base: ## Build k3s-base image (minimal k3s-in-docker foundation
 		-t $(IMAGE_PREFIX)/k3s-base:$(IMAGE_TAG) \
 		-f package/Dockerfile .
 
-# Build k3s-tools: k3s-base + debugging/client tools (k9s, helm)
+# Build k3s-tools: k3s-base + helm and debug scripts
 .PHONY: docker-build-k3s-tools
-docker-build-k3s-tools: ## Build k3s-tools image (k3s-base + k9s, helm)
+docker-build-k3s-tools: ## Build k3s-tools image (k3s-base + helm, debug scripts)
 	docker build $(DOCKER_BUILD_ARGS) \
 		--target k3s-tools \
 		-t $(IMAGE_PREFIX)/k3s-tools:$(IMAGE_TAG) \

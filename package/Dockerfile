@@ -1,7 +1,7 @@
 # Unified Dockerfile with multiple build targets
 # Build targets:
 #   - k3s-base: Minimal k3s-in-docker foundation
-#   - k3s-tools: k3s-base + debugging/client tools
+#   - k3s-tools: k3s-base + helm and debug scripts
 #   - rancher-demo: Full deployment stack
 
 # ============================================================================
@@ -93,7 +93,7 @@ EXPOSE 6443
 ENTRYPOINT ["/entrypoint.sh"]
 
 # ============================================================================
-# Target 2: k3s-tools - k3s-base + debugging tools
+# Target 2: k3s-tools - k3s-base + helm and debug scripts
 # ============================================================================
 FROM k3s-base AS k3s-tools
 
@@ -103,14 +103,8 @@ ARG TARGETARCH
 # Override hostname for tools layer
 ENV HOSTNAME=k3s-tools
 
-# Install k9s for interactive debugging
-ARG K9S_VERSION=v0.51.0
-RUN curl -fsSL "https://github.com/derailed/k9s/releases/download/${K9S_VERSION}/k9s_Linux_${TARGETARCH}.tar.gz" \
-    | tar -xz -C /usr/local/bin k9s && \
-    chmod +x /usr/local/bin/k9s
-
 # Install helm for chart management
-ARG HELM_VERSION=v4.2.1
+ARG HELM_VERSION=v4.2.2
 RUN curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-${TARGETARCH}.tar.gz" \
     | tar -xz -C /usr/local/bin --strip-components=1 --wildcards '*/helm' && \
     chmod +x /usr/local/bin/helm
