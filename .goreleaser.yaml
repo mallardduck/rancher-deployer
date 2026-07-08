@@ -57,5 +57,5 @@ release:
   github:
     owner: mallardduck
     name: rancher-deployer
-  draft: false
+  draft: true
   prerelease: auto
