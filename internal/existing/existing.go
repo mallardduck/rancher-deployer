@@ -83,9 +83,9 @@ func ValidateVersion(clusterVersion, expectedVersion string) error {
 
 	if clusterMinor != expectedMinor {
 		return fmt.Errorf(
-			"Kubernetes version mismatch:\n"+
-				"  Cluster has: %s (minor: %s)\n"+
-				"  Rancher requires: %s (minor: %s)\n\n"+
+			"kubernetes version mismatch:\n"+
+				"  cluster has: %s (minor: %s)\n"+
+				"  rancher requires: %s (minor: %s)\n\n"+
 				"Please use a cluster with Kubernetes %s.x",
 			clusterVersion, clusterMinor, expectedVersion, expectedMinor, expectedMinor,
 		)

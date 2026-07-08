@@ -472,13 +472,9 @@ func getPodStatus(namespace string) string {
 
 	total := parts[0]
 	ready := parts[1]
-	available := parts[2]
 
 	if ready == "" {
 		ready = "0"
-	}
-	if available == "" {
-		available = "0"
 	}
 
 	// Also get pod phase info for more detail
