@@ -7,6 +7,24 @@ set -e
 echo "=== Rancher Deployer Entrypoint ==="
 echo "Rancher version: ${RANCHER_VERSION:-2.14.2}"
 
+# ============================================================================
+# Environment Variable Configuration
+# ============================================================================
+# The following environment variables can be set to customize the deployment:
+#
+#   RANCHER_VERSION             - Rancher version to deploy (default: 2.14.2)
+#   RANCHER_HOSTNAME            - Hostname for Rancher ingress (default: auto-detected IP.sslip.io)
+#   RANCHER_BOOTSTRAP_PASSWORD  - Initial admin password (default: letsmein)
+#   RANCHER_NAMESPACE           - Kubernetes namespace (default: cattle-system)
+#   RANCHER_VALUES_FILE         - Path to Helm values YAML file (default: none)
+#   RANCHER_HELM_SET            - Comma-separated Helm --set values (default: none)
+#                                 Example: "replicas=3,auditLog.level=1"
+#   RANCHER_PRIME               - Use Rancher Prime edition (default: false)
+#   RANCHER_CHANNEL             - Release channel: stable, latest, alpha (default: stable)
+#   K8S_VERSION                 - Target k8s major.minor version (default: auto)
+#   CATTLE_NAMESPACE            - (deprecated, use RANCHER_NAMESPACE)
+# ============================================================================
+
 # Resolve the correct k3s version for the desired Rancher version
 if [ -z "$CATTLE_K3S_VERSION" ]; then
     echo "Resolving k3s version for Rancher ${RANCHER_VERSION}..."
@@ -136,11 +154,81 @@ else
     echo "No existing Rancher installation found - proceeding with deployment"
     echo ""
     echo "=== Deploying Rancher ${RANCHER_VERSION} ==="
-    rancher-deployer deploy \
-      --mode existing \
-      --rancher-version "${RANCHER_VERSION}" \
-      --yes \
-      "$@"
+
+    # Build deployment command from environment variables
+    DEPLOY_ARGS=(
+        "deploy"
+        "--mode" "existing"
+        "--rancher-version" "${RANCHER_VERSION}"
+        "--yes"
+    )
+
+    # Optional: Custom hostname
+    if [ -n "$RANCHER_HOSTNAME" ]; then
+        DEPLOY_ARGS+=("--hostname" "$RANCHER_HOSTNAME")
+        echo "Using custom hostname: $RANCHER_HOSTNAME"
+    fi
+
+    # Optional: Bootstrap password
+    if [ -n "$RANCHER_BOOTSTRAP_PASSWORD" ]; then
+        DEPLOY_ARGS+=("--bootstrap-password" "$RANCHER_BOOTSTRAP_PASSWORD")
+        echo "Using custom bootstrap password"
+    fi
+
+    # Optional: Namespace (support both RANCHER_NAMESPACE and legacy CATTLE_NAMESPACE)
+    NAMESPACE="${RANCHER_NAMESPACE:-${CATTLE_NAMESPACE}}"
+    if [ -n "$NAMESPACE" ] && [ "$NAMESPACE" != "cattle-system" ]; then
+        DEPLOY_ARGS+=("--namespace" "$NAMESPACE")
+        echo "Using namespace: $NAMESPACE"
+    fi
+
+    # Optional: Values file
+    if [ -n "$RANCHER_VALUES_FILE" ]; then
+        if [ -f "$RANCHER_VALUES_FILE" ]; then
+            DEPLOY_ARGS+=("--values-file" "$RANCHER_VALUES_FILE")
+            echo "Using Helm values file: $RANCHER_VALUES_FILE"
+        else
+            echo "WARNING: RANCHER_VALUES_FILE set but file not found: $RANCHER_VALUES_FILE"
+        fi
+    fi
+
+    # Optional: Helm set values (comma-separated)
+    if [ -n "$RANCHER_HELM_SET" ]; then
+        # Split comma-separated values and add each as a --set flag
+        IFS=',' read -ra HELM_SETS <<< "$RANCHER_HELM_SET"
+        for set_value in "${HELM_SETS[@]}"; do
+            DEPLOY_ARGS+=("--set" "$set_value")
+        done
+        echo "Using Helm --set values: $RANCHER_HELM_SET"
+    fi
+
+    # Optional: Rancher Prime
+    if [ "$RANCHER_PRIME" = "true" ] || [ "$RANCHER_PRIME" = "1" ]; then
+        DEPLOY_ARGS+=("--prime")
+        echo "Using Rancher Prime edition"
+    fi
+
+    # Optional: Release channel
+    if [ -n "$RANCHER_CHANNEL" ] && [ "$RANCHER_CHANNEL" != "stable" ]; then
+        DEPLOY_ARGS+=("--channel" "$RANCHER_CHANNEL")
+        echo "Using release channel: $RANCHER_CHANNEL"
+    fi
+
+    # Optional: K8s version
+    if [ -n "$K8S_VERSION" ]; then
+        DEPLOY_ARGS+=("--k8s-version" "$K8S_VERSION")
+        echo "Using k8s version: $K8S_VERSION"
+    fi
+
+    # Append any additional args passed to the container
+    DEPLOY_ARGS+=("$@")
+
+    echo ""
+    echo "Executing: rancher-deployer ${DEPLOY_ARGS[*]}"
+    echo ""
+
+    # Execute deployment
+    rancher-deployer "${DEPLOY_ARGS[@]}"
 
     DEPLOY_EXIT=$?
     if [ $DEPLOY_EXIT -ne 0 ]; then
