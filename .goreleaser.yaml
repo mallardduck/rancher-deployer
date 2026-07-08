@@ -55,7 +55,7 @@ dockers_v2:
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.created: "{{ .Date }}"
       org.opencontainers.image.revision: "{{ .FullCommit }}"
-    skip_sbom: true  # Build provenance is handled by GitHub Actions
+    sbom: false  # Build provenance is handled by GitHub Actions
 
 changelog:
   use: github
