@@ -2,7 +2,7 @@
 # Build targets:
 #   - k3s-base: Minimal k3s-in-docker foundation
 #   - k3s-tools: k3s-base + debugging/client tools
-#   - rancher-deployer: Full deployment stack
+#   - rancher-demo: Full deployment stack
 
 ARG ARCH=amd64
 ARG TARGETARCH=${ARCH}
@@ -128,9 +128,9 @@ EXPOSE 6443
 # ENTRYPOINT is inherited
 
 # ============================================================================
-# Target 3: rancher-deployer - Full deployment stack
+# Target 3: rancher-demo - Full rancher demo deployment stack
 # ============================================================================
-FROM k3s-tools AS rancher-deployer
+FROM k3s-tools AS rancher-demo
 
 # Copy rancher-deployer binary from builder
 COPY --from=go-builder /build/rancher-deployer /usr/local/bin/rancher-deployer
@@ -158,12 +158,12 @@ ENTRYPOINT ["/rancher-entrypoint.sh"]
 # Build specific targets:
 #   docker build --target=k3s-base -t k3s-base:latest .
 #   docker build --target=k3s-tools -t k3s-tools:latest .
-#   docker build --target=rancher-deployer -t rancher-deployer:latest .
+#   docker build --target=rancher-demo -t rancher-demo:latest .
 #
 # Or build all:
-#   docker build -t rancher-deployer:latest .  # Defaults to last target
+#   docker build -t rancher-demo:latest .  # Defaults to last target
 #
 # Run targets:
 #   docker run -d --privileged k3s-base:latest
 #   docker run -d --privileged k3s-tools:latest
-#   docker run -d --privileged -p 80:80 -p 443:443 rancher-deployer:latest
+#   docker run -d --privileged -p 80:80 -p 443:443 rancher-demo:latest
