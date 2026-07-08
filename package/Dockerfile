@@ -128,7 +128,7 @@ EXPOSE 6443
 # ENTRYPOINT is inherited
 
 # ============================================================================
-# Target 3: rancher-deployer - Full deployment stack
+# Target 3: rancher-demo - Full rancher demo deployment stack
 # ============================================================================
 FROM k3s-tools AS rancher-deployer
 
