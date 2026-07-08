@@ -4,13 +4,11 @@
 #   - k3s-tools: k3s-base + debugging/client tools
 #   - rancher-demo: Full deployment stack
 
-ARG ARCH=amd64
-ARG TARGETARCH=${ARCH}
-
 # ============================================================================
 # Stage: Go builder for rancher-deployer binary
 # ============================================================================
 FROM rancher/hardened-build-base:v1.26.4b1 AS go-builder
+# TARGETARCH is automatically provided by buildx for multi-platform builds
 ARG TARGETARCH
 WORKDIR /build
 COPY go.mod go.sum ./
@@ -99,6 +97,7 @@ ENTRYPOINT ["/entrypoint.sh"]
 # ============================================================================
 FROM k3s-base AS k3s-tools
 
+# TARGETARCH must be redeclared per build stage (ARG scope is stage-local)
 ARG TARGETARCH
 
 # Override hostname for tools layer
@@ -160,8 +159,11 @@ ENTRYPOINT ["/rancher-entrypoint.sh"]
 #   docker build --target=k3s-tools -t k3s-tools:latest .
 #   docker build --target=rancher-demo -t rancher-demo:latest .
 #
-# Or build all:
-#   docker build -t rancher-demo:latest .  # Defaults to last target
+# Multi-platform builds (TARGETARCH auto-injected by buildx):
+#   docker buildx build --platform=linux/amd64,linux/arm64 --target=rancher-demo -t rancher-demo:latest .
+#
+# Single architecture (specify TARGETARCH manually for non-buildx):
+#   docker build --build-arg TARGETARCH=arm64 --target=rancher-demo -t rancher-demo:latest .
 #
 # Run targets:
 #   docker run -d --privileged k3s-base:latest
