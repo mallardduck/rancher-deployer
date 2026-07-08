@@ -105,55 +105,25 @@ type HelmValues struct {
 // BuildHelmValues validates the values file (if given) and assembles the
 // full set of --set flags, injecting hostname and bootstrapPassword if not
 // already set by the caller.
-// If enableIngress is false, ingress is disabled and the service is configured
-// for direct access via traefik (no hostname restrictions).
-func BuildHelmValues(valuesFile string, setFlags []string, hostname, namespace, bootstrapPassword string, enableIngress bool) (HelmValues, error) {
+func BuildHelmValues(valuesFile string, setFlags []string, hostname, namespace, bootstrapPassword string) (HelmValues, error) {
 	if valuesFile != "" {
 		if _, err := os.Stat(valuesFile); err != nil {
 			return HelmValues{}, fmt.Errorf("--values-file %q: %w", valuesFile, err)
 		}
 	}
 
-	sets := setFlags
-
-	if enableIngress {
-		// Ingress enabled: resolve hostname and configure ingress
-		resolvedHostname, err := resolveHostname(hostname, setFlags)
-		if err != nil {
-			return HelmValues{}, err
-		}
-		sets = injectHostname(sets, resolvedHostname)
-		sets = injectIfAbsent(sets, "bootstrapPassword", bootstrapPassword)
-
-		return HelmValues{
-			ValuesFile: valuesFile,
-			SetFlags:   sets,
-			Hostname:   resolvedHostname,
-		}, nil
+	resolvedHostname, err := resolveHostname(hostname, setFlags)
+	if err != nil {
+		return HelmValues{}, err
 	}
 
-	// Ingress disabled (default): configure for direct service access
-	// This matches the old rancher/rancher docker mode behavior where
-	// Rancher is accessible directly without ingress restrictions
-	sets = injectIfAbsent(sets, "ingress.enabled", "false")
-
-	// Use traefik's default backend to route all traffic to Rancher
-	// This allows access via any hostname or IP without ingress rules
-	sets = injectIfAbsent(sets, "tls", "external")
-
+	sets := injectHostname(setFlags, resolvedHostname)
 	sets = injectIfAbsent(sets, "bootstrapPassword", bootstrapPassword)
-
-	// Return with a generic hostname for display purposes
-	// (not actually used since ingress is disabled)
-	displayHostname := "localhost"
-	if hostname != "" {
-		displayHostname = hostname
-	}
 
 	return HelmValues{
 		ValuesFile: valuesFile,
 		SetFlags:   sets,
-		Hostname:   displayHostname,
+		Hostname:   resolvedHostname,
 	}, nil
 }
 

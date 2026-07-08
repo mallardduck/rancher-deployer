@@ -13,20 +13,21 @@ echo "Rancher version: ${RANCHER_VERSION:-2.14.2}"
 # The following environment variables can be set to customize the deployment:
 #
 #   RANCHER_VERSION             - Rancher version to deploy (default: 2.14.2)
-#   RANCHER_INGRESS_ENABLED     - Enable ingress with hostname restrictions (default: false)
-#                                 When false (default): Direct service access, no hostname restrictions
-#                                 When true: Creates ingress with specific hostname (like k3d deployments)
 #   RANCHER_HOSTNAME            - Hostname for Rancher ingress (default: auto-detected IP.sslip.io)
-#                                 Only used when RANCHER_INGRESS_ENABLED=true
 #   RANCHER_BOOTSTRAP_PASSWORD  - Initial admin password (default: letsmein)
 #   RANCHER_NAMESPACE           - Kubernetes namespace (default: cattle-system)
 #   RANCHER_VALUES_FILE         - Path to Helm values YAML file (default: none)
 #   RANCHER_HELM_SET            - Comma-separated Helm --set values (default: none)
 #                                 Example: "replicas=3,auditLog.level=1"
+#                                 Note: service.type=NodePort is automatically set for dual access
 #   RANCHER_PRIME               - Use Rancher Prime edition (default: false)
 #   RANCHER_CHANNEL             - Release channel: stable, latest, alpha (default: stable)
 #   K8S_VERSION                 - Target k8s major.minor version (default: auto)
 #   CATTLE_NAMESPACE            - (deprecated, use RANCHER_NAMESPACE)
+#
+# Access Methods:
+#   - Via ingress (ports 80/443): https://<hostname> - Traditional hostname-based access
+#   - Direct NodePort (ports 8080/8443): https://localhost:8080 - Direct to service, any hostname
 # ============================================================================
 
 # Resolve the correct k3s version for the desired Rancher version
@@ -149,14 +150,13 @@ if [ "$RANCHER_DEPLOYED" = "true" ]; then
     kubectl get pods -n cattle-system -l app=rancher 2>/dev/null || true
     echo ""
 
-    # Display access URL (check if ingress exists)
-    if kubectl get ingress -n cattle-system rancher >/dev/null 2>&1; then
-        RANCHER_HOST=$(kubectl get ingress -n cattle-system rancher -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo 'rancher.local')
-        echo "Rancher UI: https://${RANCHER_HOST}"
-    else
-        echo "Rancher UI: https://<docker-host-ip>"
-        echo "  (Ingress disabled - accessible via any hostname or IP)"
-    fi
+    # Display all access methods
+    RANCHER_HOST=$(kubectl get ingress -n cattle-system rancher -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo 'rancher.local')
+    echo "Access the UI via:"
+    echo "  1. Localhost (easiest):    https://localhost"
+    echo "  2. Hostname-based:         https://${RANCHER_HOST}"
+    echo "  3. Direct NodePort:        https://localhost:8080"
+    echo "                             (also works with any IP:8080)"
     echo ""
 else
     # Fresh deployment
@@ -172,18 +172,75 @@ else
         "--yes"
     )
 
-    # Optional: Ingress configuration (default: disabled for Docker-like access)
-    if [ "$RANCHER_INGRESS_ENABLED" = "true" ] || [ "$RANCHER_INGRESS_ENABLED" = "1" ]; then
-        echo "Ingress enabled with hostname restrictions"
-        # Optional: Custom hostname (only used when ingress is enabled)
-        if [ -n "$RANCHER_HOSTNAME" ]; then
-            DEPLOY_ARGS+=("--hostname" "$RANCHER_HOSTNAME")
-            echo "Using custom hostname: $RANCHER_HOSTNAME"
-        fi
-    else
-        # Disable ingress for direct service access (matches old rancher/rancher docker mode)
-        DEPLOY_ARGS+=("--disable-ingress")
-        echo "Ingress disabled - Rancher accessible via direct service access (any hostname/IP)"
+    # Create a temporary values file with extraObjects for additional access methods
+    # 1. NodePort service for direct access on ports 8080/8443 (any hostname/IP)
+    # 2. Additional ingress for localhost access on ports 80/443
+    TEMP_VALUES_FILE="/tmp/rancher-extra-values.yaml"
+    cat > "$TEMP_VALUES_FILE" <<'EOF'
+# Extra objects for improved access methods
+extraObjects:
+  # NodePort service for direct access (any hostname/IP)
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: rancher-nodeport
+      namespace: cattle-system
+      labels:
+        app: rancher
+        chart: rancher
+    spec:
+      type: NodePort
+      selector:
+        app: rancher
+      ports:
+      - name: http
+        port: 80
+        targetPort: 80
+        nodePort: 30080
+        protocol: TCP
+      - name: https
+        port: 443
+        targetPort: 443
+        nodePort: 30443
+        protocol: TCP
+
+  # Additional ingress for localhost access (no sslip.io needed)
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: rancher-localhost
+      namespace: cattle-system
+      labels:
+        app: rancher
+        chart: rancher
+      annotations:
+        cert-manager.io/issuer: rancher
+        cert-manager.io/issuer-kind: Issuer
+    spec:
+      ingressClassName: traefik
+      rules:
+      - host: localhost
+        http:
+          paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rancher
+                port:
+                  number: 80
+      tls:
+      - hosts:
+        - localhost
+        secretName: tls-rancher-localhost-ingress
+EOF
+
+    echo "Created additional access methods (localhost ingress + NodePort service)"
+
+    # Optional: Custom hostname
+    if [ -n "$RANCHER_HOSTNAME" ]; then
+        DEPLOY_ARGS+=("--hostname" "$RANCHER_HOSTNAME")
+        echo "Using custom hostname: $RANCHER_HOSTNAME"
     fi
 
     # Optional: Bootstrap password
@@ -199,25 +256,32 @@ else
         echo "Using namespace: $NAMESPACE"
     fi
 
-    # Optional: Values file
+    # Add NodePort service values file (always included for dual access)
+    DEPLOY_ARGS+=("--values-file" "$TEMP_VALUES_FILE")
+
+    # Optional: Additional user values file
     if [ -n "$RANCHER_VALUES_FILE" ]; then
         if [ -f "$RANCHER_VALUES_FILE" ]; then
             DEPLOY_ARGS+=("--values-file" "$RANCHER_VALUES_FILE")
-            echo "Using Helm values file: $RANCHER_VALUES_FILE"
+            echo "Using additional Helm values file: $RANCHER_VALUES_FILE"
         else
             echo "WARNING: RANCHER_VALUES_FILE set but file not found: $RANCHER_VALUES_FILE"
         fi
     fi
 
     # Optional: Helm set values (comma-separated)
+    # Always include NodePort configuration, then add user-provided values
+    ALL_HELM_SETS="$NODEPORT_SET"
     if [ -n "$RANCHER_HELM_SET" ]; then
-        # Split comma-separated values and add each as a --set flag
-        IFS=',' read -ra HELM_SETS <<< "$RANCHER_HELM_SET"
-        for set_value in "${HELM_SETS[@]}"; do
-            DEPLOY_ARGS+=("--set" "$set_value")
-        done
-        echo "Using Helm --set values: $RANCHER_HELM_SET"
+        ALL_HELM_SETS="$ALL_HELM_SETS,$RANCHER_HELM_SET"
     fi
+
+    # Split comma-separated values and add each as a --set flag
+    IFS=',' read -ra HELM_SETS <<< "$ALL_HELM_SETS"
+    for set_value in "${HELM_SETS[@]}"; do
+        DEPLOY_ARGS+=("--set" "$set_value")
+    done
+    echo "Using Helm --set values: $ALL_HELM_SETS"
 
     # Optional: Rancher Prime
     if [ "$RANCHER_PRIME" = "true" ] || [ "$RANCHER_PRIME" = "1" ]; then
@@ -263,14 +327,13 @@ else
     echo "Rancher is running (existing installation)"
 fi
 
-# Display access URL based on ingress configuration
-if [ "$RANCHER_INGRESS_ENABLED" = "true" ] || [ "$RANCHER_INGRESS_ENABLED" = "1" ]; then
-    RANCHER_HOST=$(kubectl get ingress -n cattle-system rancher -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo 'rancher.local')
-    echo "Access the UI at: https://${RANCHER_HOST}"
-else
-    echo "Access the UI at: https://<docker-host-ip>"
-    echo "  (Ingress disabled - accessible via any hostname or IP)"
-fi
+# Display all access methods
+RANCHER_HOST=$(kubectl get ingress -n cattle-system rancher -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo 'rancher.local')
+echo "Access the UI via:"
+echo "  1. Localhost (easiest):    https://localhost"
+echo "  2. Hostname-based:         https://${RANCHER_HOST}"
+echo "  3. Direct NodePort:        https://localhost:8080"
+echo "                             (also works with any IP:8080)"
 echo ""
 echo "Get bootstrap password:"
 echo "  kubectl get secret --namespace cattle-system bootstrap-secret -o go-template='{{.data.bootstrapPassword|base64decode}}{{\"\\n\"}}'"

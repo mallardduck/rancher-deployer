@@ -179,5 +179,7 @@ docker-run-k3s-tools: ## Run k3s-tools container in privileged mode
 	docker run -d --privileged --name k3s-tools $(IMAGE_PREFIX)/k3s-tools:$(IMAGE_TAG)
 
 .PHONY: docker-run-rancher-demo
-docker-run-rancher-demo: ## Run rancher-demo container with exposed ports 80,443
-	docker run -d --privileged -p 80:80 -p 443:443 --name rancher-demo $(IMAGE_PREFIX)/rancher-demo:$(IMAGE_TAG)
+docker-run-rancher-demo: docker-buildx-rancher-demo ## Run rancher-demo container with exposed ports 80,443
+	docker run -d --privileged \
+		-p 80:80 -p 443:443 -p 8080:30080 -p 8443:30443 -p 6443:6443 \
+		--name rancher-demo $(IMAGE_PREFIX)/rancher-demo:$(IMAGE_TAG)

@@ -11,11 +11,14 @@ The `rancher-demo` Docker image provides a fully self-contained Rancher deployme
 ```bash
 docker run -d --privileged \
   --name rancher-demo \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 8080:8080 -p 8443:8443 -p 8080:8080 -p 8443:8443 \
   rancher-demo:latest
 ```
 
-After ~2-3 minutes, Rancher will be accessible at `https://127.0.0.1.sslip.io`
+After ~2-3 minutes, Rancher will be accessible at:
+- **`https://localhost`** ← Easiest! Just works.
+- `https://rancher.127.0.0.1.sslip.io` ← Full hostname
+- `https://localhost:8080` ← Direct NodePort (works with any IP)
 
 **Get the bootstrap password:**
 
@@ -33,53 +36,67 @@ Configure the deployment by setting environment variables with `-e` or `--env-fi
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RANCHER_VERSION` | `2.14.2` | Rancher version to deploy (e.g., `2.14.2`, `2.15.0`) |
-| `RANCHER_INGRESS_ENABLED` | `false` | Enable ingress with hostname restrictions. When `false` (default), Rancher is accessible via any hostname/IP for flexible proxy setups. Set to `true` for ingress with specific hostname |
-| `RANCHER_HOSTNAME` | Auto (IP.sslip.io) | Hostname for Rancher ingress (only used when `RANCHER_INGRESS_ENABLED=true`) |
+| `RANCHER_HOSTNAME` | Auto (IP.sslip.io) | Hostname for Rancher ingress |
 | `RANCHER_BOOTSTRAP_PASSWORD` | `letsmein` | Initial admin password for Rancher |
 | `RANCHER_NAMESPACE` | `cattle-system` | Kubernetes namespace for Rancher |
 | `RANCHER_VALUES_FILE` | *(none)* | Path to Helm values YAML inside container |
-| `RANCHER_HELM_SET` | *(none)* | Comma-separated `--set` values for Helm |
+| `RANCHER_HELM_SET` | *(none)* | Comma-separated `--set` values for Helm (Note: `service.type=NodePort` is set automatically) |
 | `RANCHER_PRIME` | `false` | Set to `true` to use Rancher Prime edition |
 | `RANCHER_CHANNEL` | `stable` | Release channel: `stable`, `latest`, `alpha` |
 | `K8S_VERSION` | Auto-detected | Target k8s major.minor (e.g., `1.28`, `1.31`) |
 
 ---
 
-## Ingress Configuration
+## Multiple Access Methods
 
-By default, the rancher-demo image **disables Kubernetes ingress** (`RANCHER_INGRESS_ENABLED=false`). This matches the behavior of the original `rancher/rancher` Docker image and provides maximum flexibility:
+The rancher-demo image provides **three ways to access Rancher** - all work simultaneously:
 
-**Benefits of disabled ingress (default):**
-- ✅ Access Rancher via any hostname or IP address
-- ✅ No hostname restrictions or DNS requirements
-- ✅ Works seamlessly with external proxies (Traefik, nginx, Caddy, etc.)
-- ✅ Simpler setup for Docker-based deployments
-- ✅ No ingress resources created in Kubernetes
+### 1. **Localhost Ingress - `https://localhost` (Easiest!)**
 
-**When to enable ingress:**
-- You want a specific hostname enforced at the Kubernetes level
-- You're testing ingress-related features
-- You prefer the k3d deployment style
+Direct access via localhost ingress (no IP address needed):
+- ✅ Just works! No configuration needed
+- ✅ No need to know your IP address
+- ✅ No sslip.io domain needed
+- ✅ Standard HTTPS on ports 80/443
+- ✅ Access: `https://localhost`
 
-To enable ingress:
-```bash
-docker run -d --privileged \
-  --name rancher-demo \
-  -p 80:80 -p 443:443 \
-  -e RANCHER_INGRESS_ENABLED=true \
-  -e RANCHER_HOSTNAME=rancher.mylab.local \
-  rancher-demo:latest
-```
+**This is the recommended method for most users!**
+
+### 2. **Hostname-Based Ingress - `https://rancher.<ip>.sslip.io`**
+
+Traditional Rancher ingress with auto-detected hostname:
+- ✅ Uses your actual IP address
+- ✅ Hostname-based routing via Traefik
+- ✅ Good for accessing from other machines on your network
+- ✅ Access: `https://rancher.192.168.1.100.sslip.io` (example)
+
+### 3. **Direct NodePort - `https://localhost:8080`**
+
+Direct access to the Rancher service (bypasses ingress):
+- ✅ Works with **any** hostname or IP address
+- ✅ Perfect for external reverse proxies (Traefik, nginx, etc.)
+- ✅ No hostname validation
+- ✅ Access: `https://localhost:8080`, `https://192.168.1.100:8080`, etc.
+
+### Which One Should I Use?
+
+**For quick local testing:** Use `https://localhost` (method #1)
+
+**For network access:** Use `https://rancher.<ip>.sslip.io` (method #2)
+
+**For external proxies:** Use NodePort on 8080/8443 (method #3)
 
 **Checking your setup:**
 ```bash
-# With ingress disabled (default):
-docker exec rancher-demo kubectl get ingress -A
-# Output: No resources found
+# Two ingresses: main hostname + localhost
+docker exec rancher-demo kubectl get ingress -n cattle-system
+# Shows:
+# - rancher (with sslip.io hostname)
+# - rancher-localhost (with localhost)
 
-# With ingress enabled:
-docker exec rancher-demo kubectl get ingress -A
-# Output: Shows rancher ingress with your hostname
+# NodePort service for direct access
+docker exec rancher-demo kubectl get svc -n cattle-system rancher-nodeport
+# Shows TYPE=NodePort on ports 8080/8443
 ```
 
 ---
@@ -91,21 +108,23 @@ docker exec rancher-demo kubectl get ingress -A
 ```bash
 docker run -d --privileged \
   --name rancher-demo \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 8080:8080 -p 8443:8443 -p 8080:8080 -p 8443:8443 \
   -e RANCHER_HOSTNAME=rancher.homelab.local \
   -e RANCHER_BOOTSTRAP_PASSWORD=MySecurePass123 \
   rancher-demo:latest
 ```
 
-Access at: `https://rancher.homelab.local`
+Access via:
+- **Ingress**: `https://rancher.homelab.local`
+- **NodePort**: `https://localhost:8080` (or any IP:8080)
 
 ---
 
 ### Using with Traefik or Other Reverse Proxies
 
-**Default setup (recommended)** — No ingress, works with any proxy:
+**Recommended: Use NodePort (port 8443) for external proxies**
 
-By default, `RANCHER_INGRESS_ENABLED=false`, which means Rancher is accessible via any hostname/IP. This is perfect for external proxies like Traefik, nginx, Caddy, etc.
+The NodePort access (8443) works with any hostname, making it perfect for external proxies:
 
 ```bash
 docker run -d --privileged \
@@ -116,26 +135,16 @@ docker run -d --privileged \
   -l "traefik.http.routers.rancher.rule=Host(\`rancher.example.com\`)" \
   -l "traefik.http.routers.rancher.entrypoints=websecure" \
   -l "traefik.http.routers.rancher.tls.certresolver=letsencrypt" \
-  -l "traefik.http.services.rancher.loadbalancer.server.port=443" \
+  -l "traefik.http.services.rancher.loadbalancer.server.port=8443" \
   -l "traefik.http.services.rancher.loadbalancer.server.scheme=https" \
   rancher-demo:latest
 ```
 
-**Note:** Do not publish ports (`-p`) when using an external proxy — let the proxy handle routing. With ingress disabled (default), the external proxy can use any hostname without restrictions.
-
-**Alternative with ingress enabled:**
-
-If you prefer to use Rancher's built-in ingress:
-
-```bash
-docker run -d --privileged \
-  --name rancher-demo \
-  --network traefik-network \
-  -e RANCHER_INGRESS_ENABLED=true \
-  -e RANCHER_HOSTNAME=rancher.example.com \
-  -e RANCHER_BOOTSTRAP_PASSWORD=MySecurePass \
-  rancher-demo:latest
-```
+**Key points:**
+- Use port **8443** (NodePort) instead of 443 for external proxies
+- No need to publish ports (`-p`) when using external proxy
+- Works with **any** hostname your proxy sends
+- Alternative: Use port 443 if you want the proxy to use Rancher's ingress
 
 ---
 
@@ -149,11 +158,15 @@ docker run -d --privileged \
   --name rancher-demo \
   -p 192.168.1.100:80:80 \
   -p 192.168.1.100:443:443 \
+  -p 192.168.1.100:8080:8080 \
+  -p 192.168.1.100:8443:8443 \
   -e RANCHER_HOSTNAME=192.168.1.100.sslip.io \
   rancher-demo:latest
 ```
 
-Access at: `https://192.168.1.100.sslip.io`
+Access via:
+- **Ingress**: `https://192.168.1.100.sslip.io`
+- **NodePort**: `https://192.168.1.100:8080`
 
 ---
 
@@ -179,7 +192,7 @@ Mount and use it:
 ```bash
 docker run -d --privileged \
   --name rancher-demo \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 8080:8080 -p 8443:8443 -p 8080:8080 -p 8443:8443 \
   -v $(pwd)/custom-values.yaml:/config/values.yaml:ro \
   -e RANCHER_VALUES_FILE=/config/values.yaml \
   rancher-demo:latest
@@ -194,7 +207,7 @@ Pass Helm chart values directly without a file:
 ```bash
 docker run -d --privileged \
   --name rancher-demo \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 8080:8080 -p 8443:8443 \
   -e RANCHER_HELM_SET="replicas=3,auditLog.level=2,bootstrapPassword=SecurePass" \
   rancher-demo:latest
 ```
@@ -210,7 +223,7 @@ Deploy Rancher Prime instead of the community edition:
 ```bash
 docker run -d --privileged \
   --name rancher-demo \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 8080:8080 -p 8443:8443 \
   -e RANCHER_VERSION=2.14.2 \
   -e RANCHER_PRIME=true \
   rancher-demo:latest
@@ -226,7 +239,7 @@ Test release candidates or alpha builds:
 # Latest channel (includes RCs)
 docker run -d --privileged \
   --name rancher-demo \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 8080:8080 -p 8443:8443 \
   -e RANCHER_VERSION=2.15.0-rc1 \
   -e RANCHER_CHANNEL=latest \
   rancher-demo:latest
@@ -234,7 +247,7 @@ docker run -d --privileged \
 # Alpha channel
 docker run -d --privileged \
   --name rancher-demo \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 8080:8080 -p 8443:8443 \
   -e RANCHER_VERSION=2.15.0-alpha1 \
   -e RANCHER_CHANNEL=alpha \
   rancher-demo:latest
@@ -253,7 +266,7 @@ docker volume create rancher-data
 # Use it
 docker run -d --privileged \
   --name rancher-demo \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 8080:8080 -p 8443:8443 \
   -v rancher-data:/var/lib/rancher \
   rancher-demo:latest
 ```
@@ -356,7 +369,7 @@ Use it:
 ```bash
 docker run -d --privileged \
   --name rancher-demo \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 8080:8080 -p 8443:8443 \
   --env-file .env \
   rancher-demo:latest
 ```
@@ -370,7 +383,7 @@ Environment variables are processed first, then any additional `rancher-deployer
 ```bash
 docker run -d --privileged \
   --name rancher-demo \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 8080:8080 -p 8443:8443 \
   -e RANCHER_VERSION=2.14.2 \
   rancher-demo:latest \
   --set ingress.tls.source=secret
@@ -457,7 +470,7 @@ docker volume rm rancher-data
 # Start fresh
 docker run -d --privileged \
   --name rancher-demo \
-  -p 80:80 -p 443:443 \
+  -p 80:80 -p 443:443 -p 8080:8080 -p 8443:8443 \
   -v rancher-data:/var/lib/rancher \
   rancher-demo:latest
 ```
@@ -475,8 +488,10 @@ services:
     container_name: rancher-demo
     privileged: true
     ports:
-      - "80:80"
-      - "443:443"
+      - "80:80"       # Traefik ingress HTTP
+      - "443:443"     # Traefik ingress HTTPS
+      - "8080:8080"   # Direct NodePort HTTP
+      - "8443:8443"   # Direct NodePort HTTPS
     environment:
       RANCHER_VERSION: "2.14.2"
       RANCHER_HOSTNAME: "rancher.homelab.local"

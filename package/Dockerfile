@@ -139,8 +139,11 @@ ENV CATTLE_NAMESPACE=cattle-system
 COPY package/rancher-entrypoint.sh /rancher-entrypoint.sh
 RUN chmod +x /rancher-entrypoint.sh
 
-# Expose Rancher ports (HTTP, HTTPS via traefik ingress, and k8s API)
-EXPOSE 80 443 6443
+# Expose Rancher ports:
+# - 80/443: Traefik ingress (hostname-based access)
+# - 8080/8443: NodePort direct access (any hostname/IP)
+# - 6443: Kubernetes API
+EXPOSE 80 443 8080 8443 6443
 
 # Override entrypoint to run deployment logic
 ENTRYPOINT ["/rancher-entrypoint.sh"]
