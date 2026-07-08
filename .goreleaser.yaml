@@ -37,14 +37,13 @@ checksum:
 
 dockers:
   - image_templates:
-      - "ghcr.io/mallardduck/rancher-demo:{{ .Version }}-amd64"
-      - "ghcr.io/mallardduck/rancher-demo:latest-amd64"
-    use: buildx
+      - "ghcr.io/mallardduck/rancher-demo:{{ .Version }}"
+      - "ghcr.io/mallardduck/rancher-demo:latest"
     dockerfile: package/Dockerfile
+    use: buildx
     build_flag_templates:
-      - "--platform=linux/amd64"
-      - "--target=rancher-deployer"
-      - "--build-arg=TARGETARCH=amd64"
+      - "--target=rancher-demo"
+      - "--build-arg=ARCH={{ .Arch }}"
       - "--label=org.opencontainers.image.title=rancher-demo"
       - "--label=org.opencontainers.image.description=Rancher deployer with k3s"
       - "--label=org.opencontainers.image.url=https://github.com/mallardduck/rancher-deployer"
@@ -52,34 +51,6 @@ dockers:
       - "--label=org.opencontainers.image.version={{ .Version }}"
       - "--label=org.opencontainers.image.created={{ .Date }}"
       - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-    goarch: amd64
-  - image_templates:
-      - "ghcr.io/mallardduck/rancher-demo:{{ .Version }}-arm64"
-      - "ghcr.io/mallardduck/rancher-demo:latest-arm64"
-    use: buildx
-    dockerfile: package/Dockerfile
-    build_flag_templates:
-      - "--platform=linux/arm64"
-      - "--target=rancher-deployer"
-      - "--build-arg=TARGETARCH=arm64"
-      - "--label=org.opencontainers.image.title=rancher-demo"
-      - "--label=org.opencontainers.image.description=Rancher deployer with k3s"
-      - "--label=org.opencontainers.image.url=https://github.com/mallardduck/rancher-deployer"
-      - "--label=org.opencontainers.image.source=https://github.com/mallardduck/rancher-deployer"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-    goarch: arm64
-
-docker_manifests:
-  - name_template: "ghcr.io/mallardduck/rancher-demo:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/mallardduck/rancher-demo:{{ .Version }}-amd64"
-      - "ghcr.io/mallardduck/rancher-demo:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/mallardduck/rancher-demo:latest"
-    image_templates:
-      - "ghcr.io/mallardduck/rancher-demo:latest-amd64"
-      - "ghcr.io/mallardduck/rancher-demo:latest-arm64"
 
 changelog:
   use: github

@@ -97,21 +97,21 @@ docker-build-k3s-tools:
 		-t $(IMAGE_PREFIX)/k3s-tools:$(IMAGE_TAG) \
 		-f package/Dockerfile .
 
-# Build rancher-deployer: full deployment stack
-.PHONY: docker-build-rancher-deployer
-docker-build-rancher-deployer:
+# Build rancher-demo: full deployment stack
+.PHONY: docker-build-rancher-demo
+docker-build-rancher-demo:
 	docker build $(DOCKER_BUILD_ARGS) \
-		--target rancher-deployer \
-		-t $(IMAGE_PREFIX)/rancher-deployer:$(IMAGE_TAG) \
+		--target rancher-demo \
+		-t $(IMAGE_PREFIX)/rancher-demo:$(IMAGE_TAG) \
 		-f package/Dockerfile .
 
 # Build all Docker images
 .PHONY: docker-build-all
-docker-build-all: docker-build-k3s-base docker-build-k3s-tools docker-build-rancher-deployer
+docker-build-all: docker-build-k3s-base docker-build-k3s-tools docker-build-rancher-demo
 
 # Default docker-build target (builds the full stack)
 .PHONY: docker-build
-docker-build: docker-build-rancher-deployer
+docker-build: docker-build-rancher-demo
 
 # ---- Docker Push Targets ----
 .PHONY: docker-push-k3s-base
@@ -122,12 +122,12 @@ docker-push-k3s-base: docker-build-k3s-base
 docker-push-k3s-tools: docker-build-k3s-tools
 	docker push $(IMAGE_PREFIX)/k3s-tools:$(IMAGE_TAG)
 
-.PHONY: docker-push-rancher-deployer
-docker-push-rancher-deployer: docker-build-rancher-deployer
-	docker push $(IMAGE_PREFIX)/rancher-deployer:$(IMAGE_TAG)
+.PHONY: docker-push-rancher-demo
+docker-push-rancher-demo: docker-build-rancher-demo
+	docker push $(IMAGE_PREFIX)/rancher-demo:$(IMAGE_TAG)
 
 .PHONY: docker-push-all
-docker-push-all: docker-push-k3s-base docker-push-k3s-tools docker-push-rancher-deployer
+docker-push-all: docker-push-k3s-base docker-push-k3s-tools docker-push-rancher-demo
 
 # ---- Docker Run Helpers ----
 .PHONY: docker-run-k3s-base
@@ -138,6 +138,6 @@ docker-run-k3s-base:
 docker-run-k3s-tools:
 	docker run -d --privileged --name k3s-tools $(IMAGE_PREFIX)/k3s-tools:$(IMAGE_TAG)
 
-.PHONY: docker-run-rancher-deployer
-docker-run-rancher-deployer:
-	docker run -d --privileged -p 80:80 -p 443:443 --name rancher-deployer $(IMAGE_PREFIX)/rancher-deployer:$(IMAGE_TAG)
+.PHONY: docker-run-rancher-demo
+docker-run-rancher-demo:
+	docker run -d --privileged -p 80:80 -p 443:443 --name rancher-demo $(IMAGE_PREFIX)/rancher-demo:$(IMAGE_TAG)
