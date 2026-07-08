@@ -30,6 +30,7 @@ type deployFlags struct {
 	clusterName       string // k3d only
 	yes               bool   // skip confirmation prompt
 	bootstrapPassword string
+	disableIngress    bool // disable ingress for docker-like direct access (opt-in)
 }
 
 func newDeployCmd() *cobra.Command {
@@ -70,6 +71,7 @@ func newDeployCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.clusterName, "cluster-name", "rancher-local", "k3d cluster name (k3d mode only)")
 	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "Skip confirmation prompt (for CI/non-interactive use)")
 	cmd.Flags().StringVar(&f.bootstrapPassword, "bootstrap-password", "letsmein", "Initial admin password for Rancher")
+	cmd.Flags().BoolVar(&f.disableIngress, "disable-ingress", false, "Disable ingress for direct service access (useful for Docker deployments with external proxies)")
 
 	_ = cmd.MarkFlagRequired("rancher-version")
 
@@ -153,7 +155,7 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Step 7: Build Helm values ────────────────────────────────────────────
 	printStep(7, "Building Helm values")
-	helmValues, err := rancher.BuildHelmValues(f.valuesFile, f.helmSet, f.hostname, f.namespace, f.bootstrapPassword)
+	helmValues, err := rancher.BuildHelmValues(f.valuesFile, f.helmSet, f.hostname, f.namespace, f.bootstrapPassword, !f.disableIngress)
 	if err != nil {
 		return err
 	}
@@ -241,7 +243,12 @@ func runDeploy(f *deployFlags) error {
 
 	fmt.Println()
 	printSuccess("Rancher v%s deployed successfully!", f.rancherVersion)
-	printInfo("Access URL : https://%s", helmValues.Hostname)
+	if f.disableIngress {
+		printInfo("Access URL : https://<host-ip> (any hostname/IP)")
+		printInfo("           : Ingress disabled - accessible via direct service access")
+	} else {
+		printInfo("Access URL : https://%s", helmValues.Hostname)
+	}
 	printInfo("Username   : admin")
 	printInfo("Password   : %s", f.bootstrapPassword)
 	fmt.Println()
@@ -262,7 +269,11 @@ func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer string, char
 	fmt.Printf("  cert-manager     : %s\n", certMgrVer)
 	fmt.Printf("  Helm chart       : %s\n", chart.String())
 	fmt.Printf("  Namespace        : %s\n", f.namespace)
-	fmt.Printf("  Hostname         : %s\n", hv.Hostname)
+	if f.disableIngress {
+		fmt.Printf("  Ingress          : disabled (direct service access, no hostname restrictions)\n")
+	} else {
+		fmt.Printf("  Hostname         : %s\n", hv.Hostname)
+	}
 	fmt.Printf("  Bootstrap PW     : %s\n", f.bootstrapPassword)
 	if f.dryRun {
 		fmt.Printf("  Mode             : DRY RUN\n")

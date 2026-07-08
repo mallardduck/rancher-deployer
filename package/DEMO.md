@@ -33,7 +33,8 @@ Configure the deployment by setting environment variables with `-e` or `--env-fi
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RANCHER_VERSION` | `2.14.2` | Rancher version to deploy (e.g., `2.14.2`, `2.15.0`) |
-| `RANCHER_HOSTNAME` | Auto (IP.sslip.io) | Hostname for Rancher ingress |
+| `RANCHER_INGRESS_ENABLED` | `false` | Enable ingress with hostname restrictions. When `false` (default), Rancher is accessible via any hostname/IP for flexible proxy setups. Set to `true` for ingress with specific hostname |
+| `RANCHER_HOSTNAME` | Auto (IP.sslip.io) | Hostname for Rancher ingress (only used when `RANCHER_INGRESS_ENABLED=true`) |
 | `RANCHER_BOOTSTRAP_PASSWORD` | `letsmein` | Initial admin password for Rancher |
 | `RANCHER_NAMESPACE` | `cattle-system` | Kubernetes namespace for Rancher |
 | `RANCHER_VALUES_FILE` | *(none)* | Path to Helm values YAML inside container |
@@ -41,6 +42,45 @@ Configure the deployment by setting environment variables with `-e` or `--env-fi
 | `RANCHER_PRIME` | `false` | Set to `true` to use Rancher Prime edition |
 | `RANCHER_CHANNEL` | `stable` | Release channel: `stable`, `latest`, `alpha` |
 | `K8S_VERSION` | Auto-detected | Target k8s major.minor (e.g., `1.28`, `1.31`) |
+
+---
+
+## Ingress Configuration
+
+By default, the rancher-demo image **disables Kubernetes ingress** (`RANCHER_INGRESS_ENABLED=false`). This matches the behavior of the original `rancher/rancher` Docker image and provides maximum flexibility:
+
+**Benefits of disabled ingress (default):**
+- ✅ Access Rancher via any hostname or IP address
+- ✅ No hostname restrictions or DNS requirements
+- ✅ Works seamlessly with external proxies (Traefik, nginx, Caddy, etc.)
+- ✅ Simpler setup for Docker-based deployments
+- ✅ No ingress resources created in Kubernetes
+
+**When to enable ingress:**
+- You want a specific hostname enforced at the Kubernetes level
+- You're testing ingress-related features
+- You prefer the k3d deployment style
+
+To enable ingress:
+```bash
+docker run -d --privileged \
+  --name rancher-demo \
+  -p 80:80 -p 443:443 \
+  -e RANCHER_INGRESS_ENABLED=true \
+  -e RANCHER_HOSTNAME=rancher.mylab.local \
+  rancher-demo:latest
+```
+
+**Checking your setup:**
+```bash
+# With ingress disabled (default):
+docker exec rancher-demo kubectl get ingress -A
+# Output: No resources found
+
+# With ingress enabled:
+docker exec rancher-demo kubectl get ingress -A
+# Output: Shows rancher ingress with your hostname
+```
 
 ---
 
@@ -61,15 +101,16 @@ Access at: `https://rancher.homelab.local`
 
 ---
 
-### Using with Traefik Reverse Proxy
+### Using with Traefik or Other Reverse Proxies
 
-When using Traefik with Docker labels for routing:
+**Default setup (recommended)** — No ingress, works with any proxy:
+
+By default, `RANCHER_INGRESS_ENABLED=false`, which means Rancher is accessible via any hostname/IP. This is perfect for external proxies like Traefik, nginx, Caddy, etc.
 
 ```bash
 docker run -d --privileged \
   --name rancher-demo \
   --network traefik-network \
-  -e RANCHER_HOSTNAME=rancher.example.com \
   -e RANCHER_BOOTSTRAP_PASSWORD=MySecurePass \
   -l "traefik.enable=true" \
   -l "traefik.http.routers.rancher.rule=Host(\`rancher.example.com\`)" \
@@ -80,7 +121,21 @@ docker run -d --privileged \
   rancher-demo:latest
 ```
 
-**Note:** Do not publish ports (`-p`) when using Traefik — let Traefik handle the routing.
+**Note:** Do not publish ports (`-p`) when using an external proxy — let the proxy handle routing. With ingress disabled (default), the external proxy can use any hostname without restrictions.
+
+**Alternative with ingress enabled:**
+
+If you prefer to use Rancher's built-in ingress:
+
+```bash
+docker run -d --privileged \
+  --name rancher-demo \
+  --network traefik-network \
+  -e RANCHER_INGRESS_ENABLED=true \
+  -e RANCHER_HOSTNAME=rancher.example.com \
+  -e RANCHER_BOOTSTRAP_PASSWORD=MySecurePass \
+  rancher-demo:latest
+```
 
 ---
 

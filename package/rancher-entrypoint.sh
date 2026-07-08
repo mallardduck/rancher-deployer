@@ -13,7 +13,11 @@ echo "Rancher version: ${RANCHER_VERSION:-2.14.2}"
 # The following environment variables can be set to customize the deployment:
 #
 #   RANCHER_VERSION             - Rancher version to deploy (default: 2.14.2)
+#   RANCHER_INGRESS_ENABLED     - Enable ingress with hostname restrictions (default: false)
+#                                 When false (default): Direct service access, no hostname restrictions
+#                                 When true: Creates ingress with specific hostname (like k3d deployments)
 #   RANCHER_HOSTNAME            - Hostname for Rancher ingress (default: auto-detected IP.sslip.io)
+#                                 Only used when RANCHER_INGRESS_ENABLED=true
 #   RANCHER_BOOTSTRAP_PASSWORD  - Initial admin password (default: letsmein)
 #   RANCHER_NAMESPACE           - Kubernetes namespace (default: cattle-system)
 #   RANCHER_VALUES_FILE         - Path to Helm values YAML file (default: none)
@@ -145,9 +149,14 @@ if [ "$RANCHER_DEPLOYED" = "true" ]; then
     kubectl get pods -n cattle-system -l app=rancher 2>/dev/null || true
     echo ""
 
-    # Get ingress hostname
-    RANCHER_HOST=$(kubectl get ingress -n cattle-system rancher -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo 'rancher.local')
-    echo "Rancher UI: https://${RANCHER_HOST}"
+    # Display access URL (check if ingress exists)
+    if kubectl get ingress -n cattle-system rancher >/dev/null 2>&1; then
+        RANCHER_HOST=$(kubectl get ingress -n cattle-system rancher -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo 'rancher.local')
+        echo "Rancher UI: https://${RANCHER_HOST}"
+    else
+        echo "Rancher UI: https://<docker-host-ip>"
+        echo "  (Ingress disabled - accessible via any hostname or IP)"
+    fi
     echo ""
 else
     # Fresh deployment
@@ -163,10 +172,18 @@ else
         "--yes"
     )
 
-    # Optional: Custom hostname
-    if [ -n "$RANCHER_HOSTNAME" ]; then
-        DEPLOY_ARGS+=("--hostname" "$RANCHER_HOSTNAME")
-        echo "Using custom hostname: $RANCHER_HOSTNAME"
+    # Optional: Ingress configuration (default: disabled for Docker-like access)
+    if [ "$RANCHER_INGRESS_ENABLED" = "true" ] || [ "$RANCHER_INGRESS_ENABLED" = "1" ]; then
+        echo "Ingress enabled with hostname restrictions"
+        # Optional: Custom hostname (only used when ingress is enabled)
+        if [ -n "$RANCHER_HOSTNAME" ]; then
+            DEPLOY_ARGS+=("--hostname" "$RANCHER_HOSTNAME")
+            echo "Using custom hostname: $RANCHER_HOSTNAME"
+        fi
+    else
+        # Disable ingress for direct service access (matches old rancher/rancher docker mode)
+        DEPLOY_ARGS+=("--disable-ingress")
+        echo "Ingress disabled - Rancher accessible via direct service access (any hostname/IP)"
     fi
 
     # Optional: Bootstrap password
@@ -246,8 +263,14 @@ else
     echo "Rancher is running (existing installation)"
 fi
 
-RANCHER_HOST=$(kubectl get ingress -n cattle-system rancher -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo 'rancher.local')
-echo "Access the UI at: https://${RANCHER_HOST}"
+# Display access URL based on ingress configuration
+if [ "$RANCHER_INGRESS_ENABLED" = "true" ] || [ "$RANCHER_INGRESS_ENABLED" = "1" ]; then
+    RANCHER_HOST=$(kubectl get ingress -n cattle-system rancher -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || echo 'rancher.local')
+    echo "Access the UI at: https://${RANCHER_HOST}"
+else
+    echo "Access the UI at: https://<docker-host-ip>"
+    echo "  (Ingress disabled - accessible via any hostname or IP)"
+fi
 echo ""
 echo "Get bootstrap password:"
 echo "  kubectl get secret --namespace cattle-system bootstrap-secret -o go-template='{{.data.bootstrapPassword|base64decode}}{{\"\\n\"}}'"
