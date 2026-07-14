@@ -1,10 +1,11 @@
-// Package detect determines whether to use k3s or k3d based on the runtime
-// environment: OS type and container runtime availability.
+// Package detect resolves and auto-detects the deployment mode (k3s, k3d, existing).
 package detect
 
 import (
+	"fmt"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 // goos and the check functions are vars so tests can substitute them.
@@ -41,6 +42,25 @@ func InstallMode() (mode, reason string) {
 		return "k3d", "container runtime detected"
 	}
 	return "k3d", "non-Linux OS — falling back to k3d"
+}
+
+// ResolveMode returns the effective install mode ("k3s", "k3d", or "existing").
+// An explicit flag value is validated and returned as-is; an empty flag triggers
+// auto-detection via InstallMode. Valid values: "k3s", "k3d", "existing" (case-insensitive).
+func ResolveMode(flag string) (mode, reason string, err error) {
+	switch strings.ToLower(flag) {
+	case "k3s":
+		return "k3s", "", nil
+	case "k3d":
+		return "k3d", "", nil
+	case "existing":
+		return "existing", "", nil
+	case "":
+		mode, reason = InstallMode()
+		return mode, reason, nil
+	default:
+		return "", "", fmt.Errorf("invalid mode %q: must be 'k3s', 'k3d', or 'existing'", flag)
+	}
 }
 
 func defaultHasDocker() bool {

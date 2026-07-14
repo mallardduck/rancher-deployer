@@ -11,7 +11,7 @@ import (
 	clusterexisting "github.com/mallardduck/rancher-deployer/internal/clusters/existing"
 	clusterk3d "github.com/mallardduck/rancher-deployer/internal/clusters/k3d"
 	clusterk3s "github.com/mallardduck/rancher-deployer/internal/clusters/k3s"
-	"github.com/mallardduck/rancher-deployer/internal/deployment"
+	"github.com/mallardduck/rancher-deployer/internal/detect"
 	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
 	"github.com/mallardduck/rancher-deployer/internal/provider"
@@ -88,7 +88,7 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Step 1: Detect install mode ─────────────────────────────────────────
 	printStep(1, "Detecting install mode")
-	mode, reason, err := deployment.ResolveMode(f.mode, true)
+	mode, reason, err := detect.ResolveMode(f.mode)
 	if err != nil {
 		return err
 	}

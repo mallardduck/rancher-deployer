@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/mallardduck/rancher-deployer/internal/deployment"
+	"github.com/mallardduck/rancher-deployer/internal/detect"
 	"github.com/mallardduck/rancher-deployer/internal/provider"
 	"github.com/mallardduck/rancher-deployer/internal/runner"
 )
@@ -43,7 +43,7 @@ func newTeardownCmd() *cobra.Command {
 func runTeardown(f *teardownFlags) error {
 	fmt.Println()
 
-	mode, reason, err := deployment.ResolveMode(f.mode, true)
+	mode, reason, err := detect.ResolveMode(f.mode)
 	if err != nil {
 		return err
 	}
