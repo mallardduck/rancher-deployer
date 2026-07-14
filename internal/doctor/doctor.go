@@ -73,18 +73,13 @@ type Doctor struct {
 }
 
 // NewDoctor creates a new Doctor with the given checkers.
-//
-// When providerCheckers are supplied (from provider.Checkers()), they replace
-// the internal mode-based dependency/environment registration — the caller is
-// responsible for providing the right binary and runtime checks.
-// When called with no providerCheckers (e.g. in tests or the legacy path),
-// the internal registration runs as before.
+// providerCheckers should come from provider.Checkers() and supply all
+// binary/runtime prerequisite checks for the active deployment mode.
 func NewDoctor(opts *CheckOptions, providerCheckers ...Checker) *Doctor {
 	if opts == nil {
 		opts = &CheckOptions{}
 	}
 
-	// Set defaults
 	if opts.Context == "" {
 		opts.Context = ContextLocal
 	}
@@ -92,7 +87,6 @@ func NewDoctor(opts *CheckOptions, providerCheckers ...Checker) *Doctor {
 		opts.NetworkTimeout = 10 * time.Second
 	}
 
-	// Auto-detect mode if not specified
 	mode := opts.Mode
 	if mode == "" {
 		mode, _ = detect.InstallMode()
@@ -103,14 +97,8 @@ func NewDoctor(opts *CheckOptions, providerCheckers ...Checker) *Doctor {
 		opts:     opts,
 	}
 
-	if len(providerCheckers) > 0 {
-		for _, c := range providerCheckers {
-			d.addChecker(c)
-		}
-	} else {
-		// Fallback: internal mode-based registration (used by tests and legacy callers).
-		d.registerDependencyCheckers(mode)
-		d.registerEnvironmentCheckers(mode)
+	for _, c := range providerCheckers {
+		d.addChecker(c)
 	}
 
 	d.registerConfigurationCheckers()
@@ -124,105 +112,6 @@ func NewDoctor(opts *CheckOptions, providerCheckers ...Checker) *Doctor {
 	}
 
 	return d
-}
-
-// registerDependencyCheckers registers binary dependency checks.
-func (d *Doctor) registerDependencyCheckers(mode string) {
-	// Always required binaries
-	d.addChecker(&BinaryChecker{
-		binary:      "kubectl",
-		displayName: "kubectl",
-		required:    true,
-		location:    LocationLocal,
-	})
-	d.addChecker(&BinaryChecker{
-		binary:      "helm",
-		displayName: "helm",
-		required:    true,
-		location:    LocationLocal,
-	})
-
-	// Mode-specific binaries
-	switch mode {
-	case "k3s":
-		d.addChecker(&BinaryChecker{
-			binary:      "k3s",
-			displayName: "k3s",
-			required:    false, // Can be auto-installed
-			modes:       []string{"k3s"},
-			location:    LocationRemote,
-		})
-
-		// Only check systemctl on Linux
-		if runtime.GOOS == "linux" {
-			d.addChecker(&BinaryChecker{
-				binary:      "systemctl",
-				displayName: "systemctl",
-				required:    true,
-				modes:       []string{"k3s"},
-				location:    LocationRemote,
-			})
-		}
-
-		d.addChecker(&BinaryChecker{
-			binary:      "sudo",
-			displayName: "sudo",
-			required:    false, // Warn if missing
-			modes:       []string{"k3s"},
-			location:    LocationRemote,
-		})
-		d.addChecker(&BinaryChecker{
-			binary:      "curl",
-			displayName: "curl",
-			required:    false,
-			modes:       []string{"k3s"},
-			location:    LocationRemote,
-		})
-		d.addChecker(&BinaryChecker{
-			binary:      "sh",
-			displayName: "sh",
-			required:    true,
-			modes:       []string{"k3s"},
-			location:    LocationRemote,
-		})
-	case "k3d":
-		d.addChecker(&BinaryChecker{
-			binary:      "k3d",
-			displayName: "k3d",
-			required:    false, // Can be auto-installed
-			modes:       []string{"k3d"},
-			location:    LocationRemote,
-		})
-		d.addChecker(&BinaryChecker{
-			binary:      "curl",
-			displayName: "curl",
-			required:    false,
-			modes:       []string{"k3d"},
-			location:    LocationRemote,
-		})
-		d.addChecker(&BinaryChecker{
-			binary:      "bash",
-			displayName: "bash",
-			required:    true,
-			modes:       []string{"k3d"},
-			location:    LocationRemote,
-		})
-
-		// Docker or Podman is required for k3d
-		d.addChecker(&ContainerRuntimeChecker{})
-	}
-}
-
-// registerEnvironmentCheckers registers environment validation checks.
-func (d *Doctor) registerEnvironmentCheckers(mode string) {
-	d.addChecker(&RuntimeChecker{mode: mode})
-	d.addChecker(&EnvVarChecker{
-		varName:     "GH_TOKEN",
-		fallback:    "GITHUB_TOKEN",
-		displayName: "GitHub API token",
-		purpose:     "Increases GitHub API rate limit from 60 to 5000 requests/hour",
-		required:    false,
-	})
 }
 
 // registerConfigurationCheckers registers configuration file checks.

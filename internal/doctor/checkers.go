@@ -34,6 +34,7 @@ type BinaryChecker struct {
 	required    bool              // false = warn, true = fail
 	modes       []string          // empty = all modes, ["k3s"] = k3s only
 	location    ExecutionLocation // where to check for this binary
+	remediation string            // optional override for missing-binary message
 }
 
 func (c *BinaryChecker) Name() string {
@@ -72,7 +73,10 @@ func (c *BinaryChecker) Check(ctx context.Context, opts *CheckOptions) CheckResu
 		status = StatusFail
 	}
 
-	remediation := getInstallRemediation(c.binary)
+	remediation := c.remediation
+	if remediation == "" {
+		remediation = getInstallRemediation(c.binary)
+	}
 
 	return CheckResult{
 		Name:        c.Name(),
@@ -207,6 +211,20 @@ func NewOptionalBinaryChecker(binary, displayName string) Checker {
 		displayName: displayName,
 		required:    false,
 		location:    LocationLocal,
+	}
+}
+
+// NewOptionalBinaryCheckerWithRemediation is like NewOptionalBinaryChecker but
+// replaces the default install instructions with a custom remediation message.
+// Use this when the binary is genuinely optional (e.g. helm on k3s/rke2 clusters
+// that have helm-controller) so the doctor output explains why it's not needed.
+func NewOptionalBinaryCheckerWithRemediation(binary, displayName, remediation string) Checker {
+	return &BinaryChecker{
+		binary:      binary,
+		displayName: displayName,
+		required:    false,
+		location:    LocationLocal,
+		remediation: remediation,
 	}
 }
 

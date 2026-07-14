@@ -51,13 +51,14 @@ func (p *Provider) KubeconfigPath() string {
 }
 
 func (p *Provider) Helm() helm.Backend {
-	return helm.NewCLI()
+	return helm.NewController()
 }
 
 func (p *Provider) Checkers() []doctor.Checker {
 	checkers := []doctor.Checker{
 		doctor.NewRequiredBinaryChecker("kubectl", "kubectl"),
-		doctor.NewRequiredBinaryChecker("helm", "helm"),
+		doctor.NewOptionalBinaryCheckerWithRemediation("helm", "helm",
+			"not required — k3s uses the built-in helm-controller for chart installation"),
 		doctor.NewOptionalBinaryChecker("k3s", "k3s"),
 		doctor.NewOptionalBinaryChecker("sudo", "sudo"),
 		doctor.NewOptionalBinaryChecker("curl", "curl"),
