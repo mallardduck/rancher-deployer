@@ -51,7 +51,7 @@ func (p *Provider) KubeconfigPath() string {
 }
 
 func (p *Provider) Helm() helm.Backend {
-	panic("helm backends not implemented until Phase 2")
+	return helm.NewCLI()
 }
 
 func (p *Provider) Checkers() []doctor.Checker {

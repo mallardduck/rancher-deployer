@@ -52,8 +52,8 @@ func (p *Provider) Teardown(_ context.Context, _ provider.TeardownOptions) error
 func (p *Provider) KubeconfigPath() string { return p.kubeconf }
 
 func (p *Provider) Helm() helm.Backend {
-	// Phase 2: detect distro via k8sDistro field and return HelmController or HelmCLI.
-	panic("helm backends not implemented until Phase 2")
+	// Phase 3: detect cluster distro and return HelmController for k3s/rke2.
+	return helm.NewCLI()
 }
 
 // Checkers returns static pre-connection prerequisite checks.

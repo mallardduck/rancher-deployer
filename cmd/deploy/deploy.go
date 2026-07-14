@@ -196,13 +196,13 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Step 10: Ensure Helm repo ────────────────────────────────────────────
 	printStep(10, "Configuring Helm repo")
-	if err := rancher.EnsureHelmRepo(chartRef.RepoName, chartRef.RepoURL, f.yes); err != nil {
+	if err := clusterProvider.Helm().EnsureRepo(chartRef.RepoName, chartRef.RepoURL, f.yes); err != nil {
 		return err
 	}
 
 	// ── Step 11: Deploy Rancher ───────────────────────────────────────────────
 	printStep(11, "Deploying Rancher via Helm")
-	if err := rancher.Install(f.namespace, chartRef, helmValues); err != nil {
+	if err := clusterProvider.Helm().Install(f.namespace, chartRef, helmValues); err != nil {
 		return err
 	}
 
