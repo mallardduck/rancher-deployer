@@ -1,8 +1,8 @@
 # Unified Dockerfile with multiple build targets
 # Build targets:
 #   - k3s-base: Minimal k3s-in-docker foundation
-#   - k3s-tools: k3s-base + helm and debug scripts
-#   - rancher-demo: Full deployment stack
+#   - k3s-tools: k3s-base + helm CLI and debug scripts (for manual helm use)
+#   - rancher-demo: Full deployment stack (uses k3s helm-controller, no helm CLI)
 
 # ============================================================================
 # Stage: Go builder for rancher-deployer binary
@@ -122,12 +122,18 @@ EXPOSE 6443
 
 # ============================================================================
 # Target 3: rancher-demo - Full rancher demo deployment stack
+# Uses helm-controller (built into k3s) — no helm CLI required.
 # ============================================================================
-FROM k3s-tools AS rancher-demo
+FROM k3s-base AS rancher-demo
 
 # Copy rancher-deployer binary from builder
 COPY --from=go-builder /build/rancher-deployer /usr/local/bin/rancher-deployer
 RUN chmod +x /usr/local/bin/rancher-deployer
+
+# Add debug scripts (kubectl-only, no helm dependency)
+COPY package/debug-cert-manager.sh /usr/local/bin/debug-cert-manager
+COPY package/debug-rancher.sh /usr/local/bin/debug-rancher
+RUN chmod +x /usr/local/bin/debug-cert-manager /usr/local/bin/debug-rancher
 
 # Rancher layer defaults (can be overridden)
 ENV RANCHER_VERSION=2.14.2

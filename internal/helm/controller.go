@@ -2,12 +2,14 @@ package helm
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
 	"github.com/mallardduck/rancher-deployer/internal/runner"
@@ -88,6 +90,101 @@ func (c *Controller) InstalledVersion(_ string) (string, error) {
 	return strings.TrimPrefix(v, "v"), nil
 }
 
+const (
+	certManagerRepo      = "https://charts.jetstack.io"
+	certManagerChartName = "cert-manager"
+	certManagerNamespace = "cert-manager"
+)
+
+// InstallCertManager creates a HelmChart CR for cert-manager with installCRDs=true,
+// waits for the helm-controller Job to complete, then waits for all cert-manager
+// deployments to be ready (required before Rancher's webhook-dependent install).
+func (c *Controller) InstallCertManager(version string) error {
+	already, err := c.IsInstalled(certManagerChartName, certManagerNamespace)
+	if err != nil {
+		return err
+	}
+	if already {
+		return fmt.Errorf(
+			"HelmChart CR %q already exists in kube-system\n"+
+				"  Re-runs are not supported. Remove it before retrying:\n"+
+				"    kubectl delete helmchart %s -n kube-system",
+			certManagerChartName, certManagerChartName,
+		)
+	}
+
+	chart := rancher.Chart{
+		ChartName: certManagerChartName,
+		RepoURL:   certManagerRepo,
+		Version:   version,
+	}
+	if err := c.applyChartCR(certManagerNamespace, chart, rancher.HelmValues{
+		SetFlags: []string{"installCRDs=true"},
+	}); err != nil {
+		return err
+	}
+
+	if err := waitForHelmJob(certManagerChartName, 5*time.Minute); err != nil {
+		return fmt.Errorf("cert-manager helm-controller job failed: %w", err)
+	}
+
+	for _, deploy := range []string{"cert-manager", "cert-manager-cainjector", "cert-manager-webhook"} {
+		if err := runner.Kubectl("rollout", "status",
+			"deployment/"+deploy, "-n", certManagerNamespace, "--timeout=120s",
+		); err != nil {
+			return fmt.Errorf("cert-manager deployment %q did not become ready: %w", deploy, err)
+		}
+	}
+	return nil
+}
+
+// WaitReady waits for the helm-controller Job to finish installing Rancher, then
+// waits for the Rancher deployment itself to become available.
+func (c *Controller) WaitReady(namespace string) error {
+	if err := waitForHelmJob("rancher", 10*time.Minute); err != nil {
+		return fmt.Errorf("rancher helm-controller job failed: %w", err)
+	}
+	return rancher.WaitReady(namespace)
+}
+
+// waitForHelmJob polls until the helm-controller Job for releaseName appears in
+// kube-system, then waits for it to reach the Complete condition.
+func waitForHelmJob(releaseName string, timeout time.Duration) error {
+	jobName := "helm-install-" + releaseName
+	fmt.Printf("  Waiting for helm-controller job/%s ...\n", jobName)
+	deadline := time.Now().Add(timeout)
+
+	// Poll until the Job is created (helm-controller may take a few seconds)
+	for time.Now().Before(deadline) {
+		out, _ := runner.Output("kubectl", "get", "job", jobName,
+			"-n", "kube-system", "--ignore-not-found", "-o", "name")
+		if strings.TrimSpace(out) != "" {
+			break
+		}
+		time.Sleep(5 * time.Second)
+	}
+	if time.Now().After(deadline) {
+		return fmt.Errorf("timed out waiting for job/%s to be created", jobName)
+	}
+
+	remaining := time.Until(deadline)
+	if err := runner.Kubectl("wait", "--for=condition=complete",
+		"job/"+jobName, "-n", "kube-system",
+		fmt.Sprintf("--timeout=%ds", int(remaining.Seconds())),
+	); err != nil {
+		// Check whether the job explicitly failed rather than just timing out
+		out, _ := runner.Output("kubectl", "get", "job", jobName,
+			"-n", "kube-system",
+			"-o", "jsonpath={.status.failed}",
+		)
+		if f := strings.TrimSpace(out); f != "" && f != "0" {
+			return fmt.Errorf("job/%s failed — inspect with: kubectl logs -n kube-system -l job-name=%s", jobName, jobName)
+		}
+		return fmt.Errorf("job/%s did not complete: %w", jobName, err)
+	}
+	return nil
+}
+
 // ── HelmChart CR template ─────────────────────────────────────────────────────
 
 type helmChartData struct {
@@ -140,52 +237,43 @@ func (c *Controller) applyChartCR(namespace string, chart rancher.Chart, values 
 	return applyManifest(buf.String())
 }
 
-// buildValuesContent merges a values file and --set flags into a single string
-// suitable for a HelmChart CR's spec.valuesContent field.
+// buildValuesContent deep-merges a values file and --set flags into a single
+// YAML string suitable for a HelmChart CR's spec.valuesContent field.
 //
-// Values file content is emitted first (base layer). The --set flags are
-// serialized to JSON and appended after — JSON is valid YAML and last-value-wins
-// under most parsers, giving the flags correct override precedence over the file.
+// The values file is the base layer; --set flags are applied on top with
+// last-value-wins semantics for overlapping keys. Everything is emitted as a
+// single YAML document so helm-controller can pass it as a --values file
+// without YAML parse errors.
 func buildValuesContent(values rancher.HelmValues) (string, error) {
-	var parts []string
+	merged := make(map[string]any)
 
 	if values.ValuesFile != "" {
 		data, err := os.ReadFile(values.ValuesFile) //nolint:gosec // path validated upstream by BuildHelmValues
 		if err != nil {
 			return "", fmt.Errorf("reading values file %q: %w", values.ValuesFile, err)
 		}
-		if trimmed := strings.TrimRight(string(data), "\n"); trimmed != "" {
-			parts = append(parts, trimmed)
+		if err := yaml.Unmarshal(data, &merged); err != nil {
+			return "", fmt.Errorf("parsing values file %q: %w", values.ValuesFile, err)
 		}
 	}
 
-	if len(values.SetFlags) > 0 {
-		m := setFlagsToMap(values.SetFlags)
-		b, err := json.MarshalIndent(m, "", "  ")
-		if err != nil {
-			return "", fmt.Errorf("serialising --set flags: %w", err)
-		}
-		parts = append(parts, string(b))
-	}
-
-	if len(parts) == 0 {
-		return "", nil
-	}
-	return strings.Join(parts, "\n") + "\n", nil
-}
-
-// setFlagsToMap converts helm --set flags (dot-notation key=value pairs) into a
-// nested map with type-aware values (numbers and booleans stay their native type).
-func setFlagsToMap(flags []string) map[string]any {
-	m := make(map[string]any)
-	for _, flag := range flags {
+	for _, flag := range values.SetFlags {
 		k, v, ok := strings.Cut(flag, "=")
 		if !ok {
 			continue
 		}
-		setNestedValue(m, strings.Split(k, "."), parseSetValue(v))
+		setNestedValue(merged, strings.Split(k, "."), parseSetValue(v))
 	}
-	return m
+
+	if len(merged) == 0 {
+		return "", nil
+	}
+
+	out, err := yaml.Marshal(merged)
+	if err != nil {
+		return "", fmt.Errorf("serialising values: %w", err)
+	}
+	return string(out), nil
 }
 
 // setNestedValue sets a pre-parsed value into a nested map using a key path.

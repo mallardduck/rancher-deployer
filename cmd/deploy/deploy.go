@@ -191,7 +191,7 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Step 9: Install cert-manager ─────────────────────────────────────────
 	printStep(9, "Installing cert-manager")
-	if err := rancher.InstallCertManager(certManagerVersion); err != nil {
+	if err := clusterProvider.Helm().InstallCertManager(certManagerVersion); err != nil {
 		return err
 	}
 
@@ -209,7 +209,7 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Step 12: Wait for Rancher ────────────────────────────────────────────
 	printStep(12, "Waiting for Rancher to become ready")
-	if err := rancher.WaitReady(f.namespace); err != nil {
+	if err := clusterProvider.Helm().WaitReady(f.namespace); err != nil {
 		return err
 	}
 

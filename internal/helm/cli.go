@@ -45,3 +45,11 @@ func (c *CLI) IsInstalled(release, namespace string) (bool, error) {
 func (c *CLI) InstalledVersion(namespace string) (string, error) {
 	return rancher.InstalledVersion(namespace)
 }
+
+func (c *CLI) InstallCertManager(version string) error {
+	return rancher.InstallCertManager(version)
+}
+
+func (c *CLI) WaitReady(namespace string) error {
+	return rancher.WaitReady(namespace)
+}

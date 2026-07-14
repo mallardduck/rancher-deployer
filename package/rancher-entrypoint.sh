@@ -119,13 +119,13 @@ trap cleanup EXIT TERM INT
 echo "=== Checking for existing Rancher installation ==="
 RANCHER_DEPLOYED=false
 
-# Check if Helm release exists
-if helm list -n cattle-system --short 2>/dev/null | grep -q "^rancher$"; then
-    echo "Found existing Helm release 'rancher' in cattle-system namespace"
+# Check for HelmChart CR (controller mode, used by k3s clusters)
+if kubectl get helmchart rancher -n kube-system --ignore-not-found -o name 2>/dev/null | grep -q "helmchart"; then
+    echo "Found existing HelmChart CR 'rancher' in kube-system"
     RANCHER_DEPLOYED=true
 fi
 
-# Double-check with deployment
+# Also check for existing deployment (covers any install method)
 if kubectl get deployment rancher -n cattle-system >/dev/null 2>&1; then
     echo "Found existing Rancher deployment"
     RANCHER_DEPLOYED=true

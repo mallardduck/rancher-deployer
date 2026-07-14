@@ -12,4 +12,6 @@ type Backend interface {
 	GetValues(release, namespace string) (string, error)
 	IsInstalled(release, namespace string) (bool, error)
 	InstalledVersion(namespace string) (string, error)
+	InstallCertManager(version string) error
+	WaitReady(namespace string) error
 }
