@@ -72,8 +72,14 @@ type Doctor struct {
 	opts     *CheckOptions
 }
 
-// NewDoctor creates a new Doctor with mode-appropriate checkers.
-func NewDoctor(opts *CheckOptions) *Doctor {
+// NewDoctor creates a new Doctor with the given checkers.
+//
+// When providerCheckers are supplied (from provider.Checkers()), they replace
+// the internal mode-based dependency/environment registration — the caller is
+// responsible for providing the right binary and runtime checks.
+// When called with no providerCheckers (e.g. in tests or the legacy path),
+// the internal registration runs as before.
+func NewDoctor(opts *CheckOptions, providerCheckers ...Checker) *Doctor {
 	if opts == nil {
 		opts = &CheckOptions{}
 	}
@@ -97,21 +103,22 @@ func NewDoctor(opts *CheckOptions) *Doctor {
 		opts:     opts,
 	}
 
-	// Register dependency checkers (always required)
-	d.registerDependencyCheckers(mode)
+	if len(providerCheckers) > 0 {
+		for _, c := range providerCheckers {
+			d.addChecker(c)
+		}
+	} else {
+		// Fallback: internal mode-based registration (used by tests and legacy callers).
+		d.registerDependencyCheckers(mode)
+		d.registerEnvironmentCheckers(mode)
+	}
 
-	// Register environment checkers
-	d.registerEnvironmentCheckers(mode)
-
-	// Register configuration checkers
 	d.registerConfigurationCheckers()
 
-	// Register network checkers (unless skipped)
 	if !opts.SkipNetwork {
 		d.registerNetworkCheckers()
 	}
 
-	// Register state checkers (unless skipped)
 	if !opts.SkipState {
 		d.registerStateCheckers(mode)
 	}

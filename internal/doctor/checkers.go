@@ -188,6 +188,49 @@ func getInstallRemediation(binary string) string {
 	}
 }
 
+// ── Exported constructors for use by provider packages ───────────────────────
+
+// NewRequiredBinaryChecker returns a Checker that fails if the binary is not in PATH.
+func NewRequiredBinaryChecker(binary, displayName string) Checker {
+	return &BinaryChecker{
+		binary:      binary,
+		displayName: displayName,
+		required:    true,
+		location:    LocationLocal,
+	}
+}
+
+// NewOptionalBinaryChecker returns a Checker that warns if the binary is not in PATH.
+func NewOptionalBinaryChecker(binary, displayName string) Checker {
+	return &BinaryChecker{
+		binary:      binary,
+		displayName: displayName,
+		required:    false,
+		location:    LocationLocal,
+	}
+}
+
+// NewRuntimeChecker returns a Checker that validates OS and mode compatibility.
+func NewRuntimeChecker(mode string) Checker {
+	return &RuntimeChecker{mode: mode}
+}
+
+// NewGitHubTokenChecker returns a Checker that warns when no GitHub API token is configured.
+func NewGitHubTokenChecker() Checker {
+	return &EnvVarChecker{
+		varName:     "GH_TOKEN",
+		fallback:    "GITHUB_TOKEN",
+		displayName: "GitHub API token",
+		purpose:     "Increases GitHub API rate limit from 60 to 5000 requests/hour",
+		required:    false,
+	}
+}
+
+// NewContainerRuntimeChecker returns a Checker that validates Docker or Podman is running.
+func NewContainerRuntimeChecker() Checker {
+	return &ContainerRuntimeChecker{}
+}
+
 // getPackageManager detects the likely package manager for the OS.
 func getPackageManager() string {
 	switch runtime.GOOS {

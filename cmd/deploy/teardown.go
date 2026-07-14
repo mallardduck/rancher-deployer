@@ -1,11 +1,13 @@
 package deploy
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mallardduck/rancher-deployer/internal/deployment"
+	"github.com/mallardduck/rancher-deployer/internal/provider"
 	"github.com/mallardduck/rancher-deployer/internal/runner"
 )
 
@@ -50,6 +52,10 @@ func runTeardown(f *teardownFlags) error {
 	} else {
 		printInfo("Mode: %s", mode)
 	}
+	clusterProvider, err := buildProvider(mode, f.clusterName)
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("%s━━ Teardown Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
 	fmt.Printf("  Rancher namespace : %s\n", f.namespace)
@@ -78,15 +84,8 @@ func runTeardown(f *teardownFlags) error {
 
 	// ── Step 3: Remove cluster ───────────────────────────────────────────────
 	printStep(3, "Removing cluster")
-	switch mode {
-	case "k3d":
-		if err := runner.K3d("cluster", "delete", f.clusterName); err != nil {
-			return fmt.Errorf("k3d cluster delete failed: %w", err)
-		}
-	case "k3s":
-		if err := runner.RunSudo("/usr/local/bin/k3s-uninstall.sh"); err != nil {
-			return fmt.Errorf("k3s uninstall failed: %w", err)
-		}
+	if err := clusterProvider.Teardown(context.Background(), provider.TeardownOptions{}); err != nil {
+		return fmt.Errorf("cluster teardown failed: %w", err)
 	}
 
 	fmt.Println()

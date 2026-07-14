@@ -84,6 +84,11 @@ func k3sVersionToImage(k3sVersion string) string {
 	return fmt.Sprintf("%s:%s", k3sImageRepo, tag)
 }
 
+// DeleteCluster removes the named k3d cluster.
+func DeleteCluster(name string) error {
+	return runner.K3d("cluster", "delete", name)
+}
+
 func firstLine(s string) string {
 	lines := strings.SplitN(s, "\n", 2)
 	return strings.TrimSpace(lines[0])

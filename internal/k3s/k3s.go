@@ -79,6 +79,11 @@ func ExportKubeconfig() error {
 	return runner.RunSudo("cp", KubeconfigPath(), dest)
 }
 
+// Uninstall runs the official k3s uninstall script, removing k3s and all its data.
+func Uninstall() error {
+	return runner.RunSudo("/usr/local/bin/k3s-uninstall.sh")
+}
+
 // isRunning returns true if the k3s service or process is active.
 func isRunning() bool {
 	// Check via systemd first
