@@ -11,6 +11,7 @@ import (
 	"github.com/mallardduck/rancher-deployer/internal/detect"
 	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
+	"github.com/mallardduck/rancher-deployer/internal/rancher"
 )
 
 func newResolveCmd() *cobra.Command {
@@ -18,19 +19,50 @@ func newResolveCmd() *cobra.Command {
 	var k8sVersion string
 	var mode string
 	var outputFormat string
+	var prime bool
+	var channel string
 
 	cmd := &cobra.Command{
 		Use:   "resolve",
 		Short: "Resolve and print version information without installing anything",
-		Example: `  rancher-deployer resolve --rancher-version 2.8.5
+		Example: `  # Auto-resolve latest stable Rancher version
+  rancher-deployer resolve
+
+  # Auto-resolve latest from a specific repo
+  rancher-deployer resolve --prime --channel latest
+
+  # Resolve a specific version
+  rancher-deployer resolve --rancher-version 2.8.5
   rancher-deployer resolve --rancher-version 2.8.5 --k8s-version 1.27
   rancher-deployer resolve --rancher-version 2.8.5 --mode k3s --output k3s-version
   rancher-deployer resolve --rancher-version 2.8.5 --output json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			normalizedChannel, err := rancher.NormaliseChannel(channel)
+			if err != nil {
+				return err
+			}
+
+			autoResolved := rancherVersion == ""
+			if autoResolved {
+				var latest string
+				latest, err = rancher.FetchLatestVersion(prime, normalizedChannel)
+				if err != nil {
+					return fmt.Errorf("could not resolve latest Rancher version: %w", err)
+				}
+				rancherVersion = latest
+			}
+
 			rancherVersion = strings.TrimPrefix(rancherVersion, "v")
+
+			// Fast path: rancher-version output only needs the Helm index lookup above.
+			if outputFormat == "rancher-version" {
+				fmt.Println(rancherVersion)
+				return nil
+			}
+
 			isPrerelease := k8sresolver.IsPrerelease(rancherVersion)
 
-			// Resolve all versions (needed for all output formats)
+			// Resolve all versions (needed for remaining output formats)
 			matrix, err := kdm.FetchSupportMatrix(rancherVersion)
 			if err != nil {
 				return fmt.Errorf("support matrix lookup failed: %w", err)
@@ -93,6 +125,10 @@ func newResolveCmd() *cobra.Command {
 			case "":
 				// Human-readable output (default)
 				fmt.Println()
+				if autoResolved {
+					printInfo("Auto-resolved latest Rancher version: v%s (channel: %s)", rancherVersion, normalizedChannel)
+					fmt.Println()
+				}
 				printStep(1, "Fetching Rancher support matrix")
 				printInfo("Rancher v%s supports: %s",
 					rancherVersion, strings.Join(matrix.SupportedMinors(), ", "))
@@ -113,16 +149,17 @@ func newResolveCmd() *cobra.Command {
 				fmt.Println()
 				return nil
 			default:
-				return fmt.Errorf("invalid output format %q: must be 'k3s-version', 'k3d-version', 'k8s-version', 'json', or empty for human-readable", outputFormat)
+				return fmt.Errorf("invalid output format %q: must be 'rancher-version', 'k3s-version', 'k3d-version', 'k8s-version', 'json', or empty for human-readable", outputFormat)
 			}
 		},
 	}
 
-	cmd.Flags().StringVar(&rancherVersion, "rancher-version", "", "Rancher version (required)")
+	cmd.Flags().StringVar(&rancherVersion, "rancher-version", "", "Rancher version (omit to auto-resolve latest)")
 	cmd.Flags().StringVar(&k8sVersion, "k8s-version", "", "Target k8s major.minor (optional)")
 	cmd.Flags().StringVar(&mode, "mode", "", "k3s or k3d (default: auto-detect)")
 	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format: k3s-version, k3d-version, k8s-version, json (default: human-readable)")
-	_ = cmd.MarkFlagRequired("rancher-version")
+	cmd.Flags().BoolVar(&prime, "prime", false, "Use Rancher Prime repository for version resolution")
+	cmd.Flags().StringVar(&channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha")
 
 	return cmd
 }
