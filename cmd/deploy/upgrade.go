@@ -15,10 +15,10 @@ import (
 type upgradeFlags struct {
 	rancherVersion string
 	namespace      string
-	prime          bool
 	channel        string
 	valuesFile     string
 	helmSet        []string
+	prime          bool
 	dryRun         bool
 	yes            bool
 	force          bool
@@ -77,9 +77,10 @@ func runUpgrade(f *upgradeFlags) error {
 	printStep(2, "Validating upgrade path")
 	if f.force {
 		printWarning("--force set: skipping upgrade-path validation")
-	} else if err := upgrade.ValidatePath(currentVersion, f.rancherVersion); err != nil {
-		return err
 	} else {
+		if pathErr := upgrade.ValidatePath(currentVersion, f.rancherVersion); pathErr != nil {
+			return pathErr
+		}
 		printInfo("v%s → v%s is a valid upgrade path", currentVersion, f.rancherVersion)
 	}
 
@@ -103,7 +104,7 @@ func runUpgrade(f *upgradeFlags) error {
 
 		// ── Step 4: Check current k8s version compatibility ───────────────────
 		printStep(4, "Checking cluster k8s compatibility")
-		if _, err := matrix.LatestPatchFor(clusterK8s); err != nil {
+		if _, compatErr := matrix.LatestPatchFor(clusterK8s); compatErr != nil {
 			if !f.force {
 				return fmt.Errorf(
 					"cluster k8s version %s is not supported by Rancher v%s\n"+

@@ -1,3 +1,4 @@
+// Package deploy wires together the CLI commands and orchestrates the deployment workflow.
 package deploy
 
 import (
@@ -21,17 +22,17 @@ import (
 type deployFlags struct {
 	rancherVersion    string
 	k8sVersion        string
-	prime             bool
 	channel           string
 	mode              string // "", "k3s", "k3d"
 	hostname          string
 	namespace         string
 	valuesFile        string
-	helmSet           []string
-	dryRun            bool
 	clusterName       string // k3d only
-	yes               bool   // skip confirmation prompt
 	bootstrapPassword string
+	helmSet           []string
+	prime             bool
+	dryRun            bool
+	yes               bool // skip confirmation prompt
 }
 
 func newDeployCmd() *cobra.Command {
@@ -237,7 +238,7 @@ func buildProvider(mode, clusterName string) (provider.Provider, error) {
 	}
 }
 
-func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer string, chart rancher.Chart, hv rancher.HelmValues) {
+func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer string, chart rancher.Chart, hv rancher.HelmValues) { //nolint:revive // 7 args are all distinct plan fields; a wrapper struct would add noise without clarity
 	edition := "Community"
 	if f.prime {
 		edition = "Prime"

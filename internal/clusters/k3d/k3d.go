@@ -1,3 +1,4 @@
+// Package k3d implements the provider.Provider interface for k3d-managed clusters.
 package k3d
 
 import (

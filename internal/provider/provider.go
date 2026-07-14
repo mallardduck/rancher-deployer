@@ -1,3 +1,4 @@
+// Package provider defines the Provider interface that each cluster backend must implement.
 package provider
 
 import (

@@ -110,27 +110,12 @@ func TestNewDoctor(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := NewDoctor(tt.opts)
-			if d == nil {
-				t.Fatal("NewDoctor() returned nil")
-			}
-			if d.opts == nil {
-				t.Fatal("Doctor.opts is nil")
-			}
-			if d.checkers == nil {
-				t.Fatal("Doctor.checkers is nil")
-			}
-
-			// Verify default context is set
 			if d.opts.Context == "" {
 				t.Error("Expected Context to be set to ContextLocal by default")
 			}
-
-			// Verify default network timeout is set
 			if d.opts.NetworkTimeout == 0 {
 				t.Error("Expected NetworkTimeout to be set by default")
 			}
-
-			// Verify checkers are registered
 			if len(d.checkers) == 0 {
 				t.Error("Expected checkers to be registered")
 			}

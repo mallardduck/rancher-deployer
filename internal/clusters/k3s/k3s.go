@@ -1,3 +1,4 @@
+// Package k3s implements the provider.Provider interface for bare-metal k3s installations.
 package k3s
 
 import (

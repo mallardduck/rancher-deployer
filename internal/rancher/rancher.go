@@ -98,8 +98,8 @@ func ChartRef(prime, prerelease bool, channel, rancherVersion string) Chart {
 // HelmValues holds everything needed to construct the Helm install command.
 type HelmValues struct {
 	ValuesFile string   // --values <file>
-	SetFlags   []string // --set key=value entries
 	Hostname   string   // resolved hostname
+	SetFlags   []string // --set key=value entries
 }
 
 // BuildHelmValues validates the values file (if given) and assembles the
@@ -112,10 +112,7 @@ func BuildHelmValues(valuesFile string, setFlags []string, hostname, namespace, 
 		}
 	}
 
-	resolvedHostname, err := resolveHostname(hostname, setFlags)
-	if err != nil {
-		return HelmValues{}, err
-	}
+	resolvedHostname := resolveHostnameWithFallback(hostname, setFlags)
 
 	sets := injectHostname(setFlags, resolvedHostname)
 	sets = injectIfAbsent(sets, "bootstrapPassword", bootstrapPassword)
@@ -138,11 +135,9 @@ func injectIfAbsent(sets []string, key, value string) []string {
 	return append(sets, prefix+value)
 }
 
-// resolveHostname returns a usable Rancher hostname in this priority order:
-//  1. Explicit --hostname flag
-//  2. hostname= found in --set flags
-//  3. Auto-detect via local interface IP + sslip.io
-//  4. Fallback to "rancher.127.0.0.1.sslip.io" with a warning
+// resolveHostname returns a hostname derived from the explicit flag, a hostname=
+// entry in setFlags, or the machine's outbound IP formatted as an sslip.io address.
+// Returns an error only when all three sources fail to produce a value.
 func resolveHostname(explicit string, setFlags []string) (string, error) {
 	if explicit != "" {
 		return explicit, nil
@@ -154,12 +149,22 @@ func resolveHostname(explicit string, setFlags []string) (string, error) {
 	}
 	ip, err := outboundIP()
 	if err != nil {
-		// Non-fatal: warn and use loopback so the deploy can still proceed
-		fmt.Printf("    Warning: could not detect node IP (%v) — using 127.0.0.1\n", err)
-		fmt.Printf("    Set --hostname to override.\n")
-		return "rancher.127.0.0.1.sslip.io", nil
+		return "", err
 	}
 	return fmt.Sprintf("rancher.%s.sslip.io", ip), nil
+}
+
+// resolveHostnameWithFallback wraps resolveHostname and falls back to
+// "rancher.127.0.0.1.sslip.io" when IP detection fails, printing a warning
+// instead of propagating the error.
+func resolveHostnameWithFallback(explicit string, setFlags []string) string {
+	hostname, err := resolveHostname(explicit, setFlags)
+	if err != nil {
+		fmt.Printf("    Warning: could not detect node IP (%v) — using 127.0.0.1\n", err)
+		fmt.Printf("    Set --hostname to override.\n")
+		return "rancher.127.0.0.1.sslip.io"
+	}
+	return hostname
 }
 
 // injectHostname adds hostname=<h> to sets if not already present.

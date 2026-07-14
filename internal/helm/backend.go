@@ -1,3 +1,4 @@
+// Package helm provides the Backend interface and its implementations for installing Helm charts.
 package helm
 
 import "github.com/mallardduck/rancher-deployer/internal/rancher"

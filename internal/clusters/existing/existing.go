@@ -1,3 +1,4 @@
+// Package existing implements the provider.Provider interface for pre-existing Kubernetes clusters.
 package existing
 
 import (

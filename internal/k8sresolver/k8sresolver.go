@@ -60,11 +60,14 @@ func loadCache() ([]ghRelease, bool) {
 }
 
 func saveCache(releases []ghRelease) {
-	path, err := cacheFilePath()
+	var path string
+	var err error
+
+	path, err = cacheFilePath()
 	if err != nil {
 		return
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	if err = os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return
 	}
 	data, err := json.Marshal(releasesCache{FetchedAt: time.Now(), Releases: releases})

@@ -29,9 +29,9 @@ const (
 type CheckResult struct {
 	Name        string      // Human-readable check name
 	Category    string      // "dependencies", "environment", "configuration", "network", "state"
-	Status      CheckStatus // Pass, warn, or fail
 	Message     string      // Details about the check
 	Remediation string      // How to fix if failed/warned (optional)
+	Status      CheckStatus // Pass, warn, or fail
 }
 
 // Checker interface - all validation checks implement this.
@@ -68,8 +68,8 @@ type CheckOptions struct {
 
 // Doctor orchestrates all health checks.
 type Doctor struct {
-	checkers []Checker
 	opts     *CheckOptions
+	checkers []Checker
 }
 
 // NewDoctor creates a new Doctor with the given checkers.

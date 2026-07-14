@@ -71,11 +71,12 @@ func newResolveCmd() *cobra.Command {
 					if err != nil {
 						continue // Skip if can't resolve
 					}
-					clusterVer, err := k8sresolver.ResolveClusterVersion(mode, k8sVer)
+					ver, err := k8sresolver.ResolveClusterVersion(mode, k8sVer)
 					if err != nil {
 						continue // Skip if can't resolve
 					}
-					k3sVersions[minor] = clusterVer
+					k3sVersions[minor] = ver
+					clusterVer = ver
 				}
 
 				output := map[string]interface{}{

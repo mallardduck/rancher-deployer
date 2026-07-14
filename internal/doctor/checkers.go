@@ -29,12 +29,11 @@ const (
 // TODO: When --fix flag is implemented, this checker should return remediation
 // with downloadable binaries using github.com/mallardduck/ghreleases
 type BinaryChecker struct {
+	location    ExecutionLocation // where to check for this binary
 	binary      string
 	displayName string
-	required    bool              // false = warn, true = fail
-	modes       []string          // empty = all modes, ["k3s"] = k3s only
-	location    ExecutionLocation // where to check for this binary
-	remediation string            // optional override for missing-binary message
+	remediation string // optional override for missing-binary message
+	required    bool   // false = warn, true = fail
 }
 
 func (c *BinaryChecker) Name() string {
