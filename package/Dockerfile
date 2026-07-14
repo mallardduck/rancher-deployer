@@ -136,7 +136,7 @@ COPY package/debug-rancher.sh /usr/local/bin/debug-rancher
 RUN chmod +x /usr/local/bin/debug-cert-manager /usr/local/bin/debug-rancher
 
 # Rancher layer defaults (can be overridden)
-ENV RANCHER_VERSION=2.14.2
+ENV RANCHER_VERSION=""
 ENV CATTLE_K3S_VERSION=""
 ENV HOSTNAME=rancher-local
 ENV CATTLE_NAMESPACE=cattle-system

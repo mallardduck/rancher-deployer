@@ -10,8 +10,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/mallardduck/rancher-deployer/internal/runner"
 )
@@ -91,6 +94,100 @@ func ChartRef(prime, prerelease bool, channel, rancherVersion string) Chart {
 		Version:      rancherVersion,
 		IsPrerelease: prerelease,
 	}
+}
+
+// helmIndex is the minimal subset of a Helm repository index file needed to
+// find the latest chart version.
+type helmIndex struct {
+	Entries map[string][]struct {
+		Version string `yaml:"version"`
+	} `yaml:"entries"`
+}
+
+// FetchLatestVersion queries the Helm repository for the given prime/channel
+// combination and returns the latest available Rancher version (without a leading "v").
+func FetchLatestVersion(prime bool, channel string) (string, error) {
+	repoURL, ok := repoURLs[prime][channel]
+	if !ok {
+		return "", fmt.Errorf("no repository configured for prime=%v channel=%q", prime, channel)
+	}
+
+	indexURL := repoURL + "/index.yaml"
+	client := &http.Client{Timeout: certManagerTimeout}
+	resp, err := client.Get(indexURL) //nolint:gosec // URL built from internal map of known Helm repo constants
+	if err != nil {
+		return "", fmt.Errorf("could not fetch Helm index from %s: %w", indexURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %d fetching Helm index from %s", resp.StatusCode, indexURL)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("could not read Helm index: %w", err)
+	}
+
+	var index helmIndex
+	if err := yaml.Unmarshal(body, &index); err != nil {
+		return "", fmt.Errorf("could not parse Helm index: %w", err)
+	}
+
+	entries, ok := index.Entries[chartName]
+	if !ok || len(entries) == 0 {
+		return "", fmt.Errorf("no %q chart entries in Helm index from %s", chartName, indexURL)
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return compareRancherVersions(entries[i].Version, entries[j].Version) > 0
+	})
+
+	return strings.TrimPrefix(entries[0].Version, "v"), nil
+}
+
+// compareRancherVersions compares two Rancher version strings numerically.
+// Returns >0 if a is newer, <0 if b is newer, 0 if equal.
+// Stable releases sort above pre-release versions at the same base (e.g. 2.9.0 > 2.9.0-rc1).
+func compareRancherVersions(a, b string) int {
+	parseVer := func(v string) (maj, min, pat int, pre string) {
+		v = strings.TrimPrefix(v, "v")
+		if idx := strings.IndexByte(v, '-'); idx >= 0 {
+			pre = v[idx:]
+			v = v[:idx]
+		}
+		parts := strings.SplitN(v, ".", 3)
+		if len(parts) > 0 {
+			_, _ = fmt.Sscanf(parts[0], "%d", &maj)
+		}
+		if len(parts) > 1 {
+			_, _ = fmt.Sscanf(parts[1], "%d", &min)
+		}
+		if len(parts) > 2 {
+			_, _ = fmt.Sscanf(parts[2], "%d", &pat)
+		}
+		return
+	}
+
+	aMaj, aMin, aPat, aPre := parseVer(a)
+	bMaj, bMin, bPat, bPre := parseVer(b)
+
+	if aMaj != bMaj {
+		return aMaj - bMaj
+	}
+	if aMin != bMin {
+		return aMin - bMin
+	}
+	if aPat != bPat {
+		return aPat - bPat
+	}
+	if aPre == "" && bPre != "" {
+		return 1 // a is stable, b is pre-release — a wins
+	}
+	if aPre != "" && bPre == "" {
+		return -1 // a is pre-release, b is stable — b wins
+	}
+	return strings.Compare(aPre, bPre)
 }
 
 // ── Helm values ──────────────────────────────────────────────────────────────

@@ -5,14 +5,14 @@
 set -e
 
 echo "=== Rancher Deployer Entrypoint ==="
-echo "Rancher version: ${RANCHER_VERSION:-2.14.2}"
+echo "Rancher version: ${RANCHER_VERSION:-auto}"
 
 # ============================================================================
 # Environment Variable Configuration
 # ============================================================================
 # The following environment variables can be set to customize the deployment:
 #
-#   RANCHER_VERSION             - Rancher version to deploy (default: 2.14.2)
+#   RANCHER_VERSION             - Rancher version to deploy (default: auto-resolved from channel)
 #   RANCHER_HOSTNAME            - Hostname for Rancher ingress (default: auto-detected IP.sslip.io)
 #   RANCHER_BOOTSTRAP_PASSWORD  - Initial admin password (default: letsmein)
 #   RANCHER_NAMESPACE           - Kubernetes namespace (default: cattle-system)
@@ -29,6 +29,29 @@ echo "Rancher version: ${RANCHER_VERSION:-2.14.2}"
 #   - Via ingress (ports 80/443): https://<hostname> - Traditional hostname-based access
 #   - Direct NodePort (ports 8080/8443): https://localhost:8080 - Direct to service, any hostname
 # ============================================================================
+
+# ── Resolve Rancher version ──────────────────────────────────────────────────
+# If RANCHER_VERSION is not set, auto-resolve the latest release from the
+# configured channel/repo (respects RANCHER_PRIME and RANCHER_CHANNEL).
+if [ -z "$RANCHER_VERSION" ]; then
+    echo "RANCHER_VERSION not set — auto-resolving latest Rancher version..."
+
+    RESOLVE_VER_ARGS=("resolve" "--output" "rancher-version")
+    if [ "$RANCHER_PRIME" = "true" ] || [ "$RANCHER_PRIME" = "1" ]; then
+        RESOLVE_VER_ARGS+=("--prime")
+    fi
+    if [ -n "$RANCHER_CHANNEL" ]; then
+        RESOLVE_VER_ARGS+=("--channel" "$RANCHER_CHANNEL")
+    fi
+
+    RANCHER_VERSION=$(rancher-deployer "${RESOLVE_VER_ARGS[@]}")
+    if [ -z "$RANCHER_VERSION" ]; then
+        echo "ERROR: Failed to auto-resolve Rancher version"
+        exit 1
+    fi
+    echo "Auto-resolved Rancher version: ${RANCHER_VERSION}"
+    export RANCHER_VERSION
+fi
 
 # Resolve the correct k3s version for the desired Rancher version
 if [ -z "$CATTLE_K3S_VERSION" ]; then
