@@ -29,11 +29,11 @@ const (
 // TODO: When --fix flag is implemented, this checker should return remediation
 // with downloadable binaries using github.com/mallardduck/ghreleases
 type BinaryChecker struct {
+	location    ExecutionLocation // where to check for this binary
 	binary      string
 	displayName string
-	required    bool              // false = warn, true = fail
-	modes       []string          // empty = all modes, ["k3s"] = k3s only
-	location    ExecutionLocation // where to check for this binary
+	remediation string // optional override for missing-binary message
+	required    bool   // false = warn, true = fail
 }
 
 func (c *BinaryChecker) Name() string {
@@ -72,7 +72,10 @@ func (c *BinaryChecker) Check(ctx context.Context, opts *CheckOptions) CheckResu
 		status = StatusFail
 	}
 
-	remediation := getInstallRemediation(c.binary)
+	remediation := c.remediation
+	if remediation == "" {
+		remediation = getInstallRemediation(c.binary)
+	}
 
 	return CheckResult{
 		Name:        c.Name(),
@@ -186,6 +189,63 @@ func getInstallRemediation(binary string) string {
 	default:
 		return fmt.Sprintf("Install %s using your package manager", binary)
 	}
+}
+
+// ── Exported constructors for use by provider packages ───────────────────────
+
+// NewRequiredBinaryChecker returns a Checker that fails if the binary is not in PATH.
+func NewRequiredBinaryChecker(binary, displayName string) Checker {
+	return &BinaryChecker{
+		binary:      binary,
+		displayName: displayName,
+		required:    true,
+		location:    LocationLocal,
+	}
+}
+
+// NewOptionalBinaryChecker returns a Checker that warns if the binary is not in PATH.
+func NewOptionalBinaryChecker(binary, displayName string) Checker {
+	return &BinaryChecker{
+		binary:      binary,
+		displayName: displayName,
+		required:    false,
+		location:    LocationLocal,
+	}
+}
+
+// NewOptionalBinaryCheckerWithRemediation is like NewOptionalBinaryChecker but
+// replaces the default install instructions with a custom remediation message.
+// Use this when the binary is genuinely optional (e.g. helm on k3s/rke2 clusters
+// that have helm-controller) so the doctor output explains why it's not needed.
+func NewOptionalBinaryCheckerWithRemediation(binary, displayName, remediation string) Checker {
+	return &BinaryChecker{
+		binary:      binary,
+		displayName: displayName,
+		required:    false,
+		location:    LocationLocal,
+		remediation: remediation,
+	}
+}
+
+// NewRuntimeChecker returns a Checker that validates OS and mode compatibility.
+func NewRuntimeChecker(mode string) Checker {
+	return &RuntimeChecker{mode: mode}
+}
+
+// NewGitHubTokenChecker returns a Checker that warns when no GitHub API token is configured.
+func NewGitHubTokenChecker() Checker {
+	return &EnvVarChecker{
+		varName:     "GH_TOKEN",
+		fallback:    "GITHUB_TOKEN",
+		displayName: "GitHub API token",
+		purpose:     "Increases GitHub API rate limit from 60 to 5000 requests/hour",
+		required:    false,
+	}
+}
+
+// NewContainerRuntimeChecker returns a Checker that validates Docker or Podman is running.
+func NewContainerRuntimeChecker() Checker {
+	return &ContainerRuntimeChecker{}
 }
 
 // getPackageManager detects the likely package manager for the OS.

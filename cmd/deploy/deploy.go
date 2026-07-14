@@ -1,35 +1,38 @@
+// Package deploy wires together the CLI commands and orchestrates the deployment workflow.
 package deploy
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/mallardduck/rancher-deployer/internal/deployment"
-	"github.com/mallardduck/rancher-deployer/internal/existing"
-	"github.com/mallardduck/rancher-deployer/internal/k3d"
-	"github.com/mallardduck/rancher-deployer/internal/k3s"
+	clusterexisting "github.com/mallardduck/rancher-deployer/internal/clusters/existing"
+	clusterk3d "github.com/mallardduck/rancher-deployer/internal/clusters/k3d"
+	clusterk3s "github.com/mallardduck/rancher-deployer/internal/clusters/k3s"
+	"github.com/mallardduck/rancher-deployer/internal/detect"
 	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
+	"github.com/mallardduck/rancher-deployer/internal/provider"
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
 )
 
 type deployFlags struct {
 	rancherVersion    string
 	k8sVersion        string
-	prime             bool
 	channel           string
 	mode              string // "", "k3s", "k3d"
 	hostname          string
 	namespace         string
 	valuesFile        string
-	helmSet           []string
-	dryRun            bool
 	clusterName       string // k3d only
-	yes               bool   // skip confirmation prompt
 	bootstrapPassword string
+	helmSet           []string
+	prime             bool
+	dryRun            bool
+	yes               bool // skip confirmation prompt
 }
 
 func newDeployCmd() *cobra.Command {
@@ -86,7 +89,7 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Step 1: Detect install mode ─────────────────────────────────────────
 	printStep(1, "Detecting install mode")
-	mode, reason, err := deployment.ResolveMode(f.mode, true)
+	mode, reason, err := detect.ResolveMode(f.mode)
 	if err != nil {
 		return err
 	}
@@ -94,6 +97,10 @@ func runDeploy(f *deployFlags) error {
 		printInfo("Auto-detected: %s (%s)", mode, reason)
 	} else {
 		printInfo("Mode: %s", mode)
+	}
+	clusterProvider, err := buildProvider(mode, f.clusterName)
+	if err != nil {
+		return err
 	}
 
 	// ── Step 2: Resolve Rancher support matrix ───────────────────────────────
@@ -113,24 +120,18 @@ func runDeploy(f *deployFlags) error {
 	}
 	printInfo("Target k8s version: %s", resolvedK8s)
 
-	// ── Step 4: Resolve k3s/k3d version (skip for existing mode) ─────────────
-	var clusterVersion string
+	// ── Step 4: Resolve cluster version ──────────────────────────────────────
 	if mode == "existing" {
 		printStep(4, "Validating existing cluster")
-		clusterVersion, err = existing.ValidateCluster()
-		if err != nil {
-			return err
-		}
-		// Validate that cluster k8s version is compatible with Rancher requirements
-		if err := existing.ValidateVersion(clusterVersion, resolvedK8s); err != nil {
-			return err
-		}
 	} else {
 		printStep(4, "Resolving k3s/k3d version")
-		clusterVersion, err = k8sresolver.ResolveClusterVersion(mode, resolvedK8s)
-		if err != nil {
-			return err
-		}
+	}
+	var clusterVersion string
+	clusterVersion, err = clusterProvider.ResolveClusterVersion(context.Background(), resolvedK8s)
+	if err != nil {
+		return err
+	}
+	if mode != "existing" {
 		printInfo("Cluster version: %s", clusterVersion)
 	}
 
@@ -182,60 +183,33 @@ func runDeploy(f *deployFlags) error {
 		return nil
 	}
 
-	// ── Step 8: Install cluster (skip for existing mode) ─────────────────────
+	// ── Step 8: Install cluster ───────────────────────────────────────────────
 	printStep(8, "Installing cluster")
-	switch mode {
-	case "existing":
-		printInfo("Using existing Kubernetes cluster (kubectl already configured)")
-	case "k3d":
-		if err := k3d.EnsureInstalled(); err != nil {
-			return err
-		}
-		if err := k3d.CreateCluster(f.clusterName, clusterVersion); err != nil {
-			return err
-		}
-		// Merge k3d kubeconfig into ~/.kube/config so helm/kubectl work
-		if err := k3d.KubeconfigMerge(f.clusterName); err != nil {
-			return fmt.Errorf("kubeconfig merge failed: %w", err)
-		}
-	case "k3s":
-		if err := k3s.Install(clusterVersion); err != nil {
-			return err
-		}
-		// Set KUBECONFIG so kubectl/helm can reach the cluster before the
-		// kubeconfig is copied to ~/.kube/config.
-		if err := os.Setenv("KUBECONFIG", k3s.KubeconfigPath()); err != nil {
-			return fmt.Errorf("could not set KUBECONFIG: %w", err)
-		}
-		if err := k3s.WaitReady(); err != nil {
-			return fmt.Errorf("k3s node did not become ready: %w", err)
-		}
-		if err := k3s.ExportKubeconfig(); err != nil {
-			return err
-		}
+	if err := clusterProvider.Setup(context.Background(), provider.SetupOptions{ClusterVersion: clusterVersion}); err != nil {
+		return err
 	}
 
 	// ── Step 9: Install cert-manager ─────────────────────────────────────────
 	printStep(9, "Installing cert-manager")
-	if err := rancher.InstallCertManager(certManagerVersion); err != nil {
+	if err := clusterProvider.Helm().InstallCertManager(certManagerVersion); err != nil {
 		return err
 	}
 
 	// ── Step 10: Ensure Helm repo ────────────────────────────────────────────
 	printStep(10, "Configuring Helm repo")
-	if err := rancher.EnsureHelmRepo(chartRef.RepoName, chartRef.RepoURL, f.yes); err != nil {
+	if err := clusterProvider.Helm().EnsureRepo(chartRef.RepoName, chartRef.RepoURL, f.yes); err != nil {
 		return err
 	}
 
 	// ── Step 11: Deploy Rancher ───────────────────────────────────────────────
 	printStep(11, "Deploying Rancher via Helm")
-	if err := rancher.Install(f.namespace, chartRef, helmValues); err != nil {
+	if err := clusterProvider.Helm().Install(f.namespace, chartRef, helmValues); err != nil {
 		return err
 	}
 
 	// ── Step 12: Wait for Rancher ────────────────────────────────────────────
 	printStep(12, "Waiting for Rancher to become ready")
-	if err := rancher.WaitReady(f.namespace); err != nil {
+	if err := clusterProvider.Helm().WaitReady(f.namespace); err != nil {
 		return err
 	}
 
@@ -249,7 +223,22 @@ func runDeploy(f *deployFlags) error {
 	return nil
 }
 
-func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer string, chart rancher.Chart, hv rancher.HelmValues) {
+// buildProvider constructs the cluster provider for the resolved mode.
+// clusterName is only meaningful for k3d; it is ignored by k3s and existing.
+func buildProvider(mode, clusterName string) (provider.Provider, error) {
+	switch mode {
+	case "k3d":
+		return clusterk3d.NewProvider(clusterName), nil
+	case "k3s":
+		return clusterk3s.NewProvider(), nil
+	case "existing":
+		return clusterexisting.NewProvider(""), nil
+	default:
+		return nil, fmt.Errorf("unknown mode %q", mode)
+	}
+}
+
+func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer string, chart rancher.Chart, hv rancher.HelmValues) { //nolint:revive // 7 args are all distinct plan fields; a wrapper struct would add noise without clarity
 	edition := "Community"
 	if f.prime {
 		edition = "Prime"

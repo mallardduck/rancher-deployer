@@ -110,27 +110,12 @@ func TestNewDoctor(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := NewDoctor(tt.opts)
-			if d == nil {
-				t.Fatal("NewDoctor() returned nil")
-			}
-			if d.opts == nil {
-				t.Fatal("Doctor.opts is nil")
-			}
-			if d.checkers == nil {
-				t.Fatal("Doctor.checkers is nil")
-			}
-
-			// Verify default context is set
 			if d.opts.Context == "" {
 				t.Error("Expected Context to be set to ContextLocal by default")
 			}
-
-			// Verify default network timeout is set
 			if d.opts.NetworkTimeout == 0 {
 				t.Error("Expected NetworkTimeout to be set by default")
 			}
-
-			// Verify checkers are registered
 			if len(d.checkers) == 0 {
 				t.Error("Expected checkers to be registered")
 			}
@@ -215,71 +200,14 @@ func TestDoctor_RunAll_WithContext(t *testing.T) {
 	}
 }
 
-func TestDoctor_ModeSpecificCheckers(t *testing.T) {
-	tests := []struct {
-		name            string
-		mode            string
-		expectK3sCheck  bool
-		expectK3dCheck  bool
-		expectContainer bool
-	}{
-		{
-			name:            "k3s mode",
-			mode:            "k3s",
-			expectK3sCheck:  true,
-			expectK3dCheck:  false,
-			expectContainer: false,
-		},
-		{
-			name:            "k3d mode",
-			mode:            "k3d",
-			expectK3sCheck:  false,
-			expectK3dCheck:  true,
-			expectContainer: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := NewDoctor(&CheckOptions{
-				Mode:        tt.mode,
-				SkipNetwork: true,
-				SkipState:   true,
-			})
-
-			hasK3s := false
-			hasK3d := false
-			hasContainer := false
-
-			for _, c := range d.checkers {
-				if c.Name() == "k3s" {
-					hasK3s = true
-				}
-				if c.Name() == "k3d" {
-					hasK3d = true
-				}
-				if c.Name() == "container runtime" {
-					hasContainer = true
-				}
-			}
-
-			if hasK3s != tt.expectK3sCheck {
-				t.Errorf("Expected k3s checker = %v, got %v", tt.expectK3sCheck, hasK3s)
-			}
-			if hasK3d != tt.expectK3dCheck {
-				t.Errorf("Expected k3d checker = %v, got %v", tt.expectK3dCheck, hasK3d)
-			}
-			if hasContainer != tt.expectContainer {
-				t.Errorf("Expected container checker = %v, got %v", tt.expectContainer, hasContainer)
-			}
-		})
-	}
-}
-
 func TestCheckResult_Categories(t *testing.T) {
 	expectedCategories := []string{"dependencies", "environment", "configuration", "network", "state"}
 
-	d := NewDoctor(&CheckOptions{})
+	// Pass minimal provider checkers to exercise the dependencies and environment categories.
+	d := NewDoctor(&CheckOptions{},
+		NewRequiredBinaryChecker("kubectl", "kubectl"),
+		NewRuntimeChecker("k3d"),
+	)
 	ctx := context.Background()
 	results := d.RunAll(ctx)
 

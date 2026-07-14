@@ -7,12 +7,20 @@ linters:
   # Start from the standard set (errcheck, govet, staticcheck, etc.) and add more.
   default: standard
   enable:
-    - bodyclose   # HTTP response bodies must be closed
-    - gocritic    # broad set of Go antipattern checks
-    - misspell    # catch typos in comments and strings
-    - nilerr      # returning nil when err is non-nil is almost always a bug
-    - revive      # opinionated style checks (successor to golint)
-    - gosec       # security issues; see exclusions below
+    # --- Idiomatic Best Practices ---
+    - revive           # Flexible drop-in replacement for golint (naming, style)
+    - staticcheck      # Performs advanced static analysis for bugs and performance
+    - govet            # Reports suspicious constructs (printf formatting, shadows)
+    - errcheck         # Ensures all returned errors are explicitly checked/handled
+    - bodyclose        # Checks whether HTTP response bodies are successfully closed
+
+    # --- Strict Code Quality & Safety ---
+    - errorlint        # Enforces correct usage of errors.Is and errors.As wrapping
+    - gosec            # Inspects source code for security problems
+    - prealloc         # Catches slice declarations that could optimize by preallocating
+    - unparam          # Detects unused function parameters
+    - unused           # Checks for unused constants, variables, functions, and types
+    - makezero         # Finds slices initialized with non-zero length but appended to
 
   settings:
     errcheck:
@@ -28,10 +36,14 @@ linters:
 
     revive:
       rules:
-        # Don't require a doc comment on every exported symbol; the code is a
-        # CLI tool and many functions are self-describing.
-        - name: exported
-          disabled: true
+        - name: error-return
+        - name: var-naming
+        - name: package-comments
+        - name: argument-limit
+          arguments: [5]
+
+    govet:
+      enable-all: true
 
   exclusions:
     # Don't apply security or strict error-checking linters to test files.
@@ -41,12 +53,27 @@ linters:
           - gosec
           - errcheck
           - gocritic
+          - revive
+          - govet
 
 formatters:
   enable:
-    - goimports  # enforces import grouping: stdlib / external / internal
+    - gofmt
+    - goimports
+    - gci
 
   settings:
     goimports:
       local-prefixes:
         - github.com/mallardduck/rancher-deployer
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/mallardduck/rancher-deployer)
+    gofmt:
+      simplify: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

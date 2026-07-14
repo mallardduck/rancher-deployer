@@ -98,8 +98,8 @@ func ChartRef(prime, prerelease bool, channel, rancherVersion string) Chart {
 // HelmValues holds everything needed to construct the Helm install command.
 type HelmValues struct {
 	ValuesFile string   // --values <file>
-	SetFlags   []string // --set key=value entries
 	Hostname   string   // resolved hostname
+	SetFlags   []string // --set key=value entries
 }
 
 // BuildHelmValues validates the values file (if given) and assembles the
@@ -112,10 +112,7 @@ func BuildHelmValues(valuesFile string, setFlags []string, hostname, namespace, 
 		}
 	}
 
-	resolvedHostname, err := resolveHostname(hostname, setFlags)
-	if err != nil {
-		return HelmValues{}, err
-	}
+	resolvedHostname := resolveHostnameWithFallback(hostname, setFlags)
 
 	sets := injectHostname(setFlags, resolvedHostname)
 	sets = injectIfAbsent(sets, "bootstrapPassword", bootstrapPassword)
@@ -138,11 +135,9 @@ func injectIfAbsent(sets []string, key, value string) []string {
 	return append(sets, prefix+value)
 }
 
-// resolveHostname returns a usable Rancher hostname in this priority order:
-//  1. Explicit --hostname flag
-//  2. hostname= found in --set flags
-//  3. Auto-detect via local interface IP + sslip.io
-//  4. Fallback to "rancher.127.0.0.1.sslip.io" with a warning
+// resolveHostname returns a hostname derived from the explicit flag, a hostname=
+// entry in setFlags, or the machine's outbound IP formatted as an sslip.io address.
+// Returns an error only when all three sources fail to produce a value.
 func resolveHostname(explicit string, setFlags []string) (string, error) {
 	if explicit != "" {
 		return explicit, nil
@@ -154,12 +149,22 @@ func resolveHostname(explicit string, setFlags []string) (string, error) {
 	}
 	ip, err := outboundIP()
 	if err != nil {
-		// Non-fatal: warn and use loopback so the deploy can still proceed
-		fmt.Printf("    Warning: could not detect node IP (%v) — using 127.0.0.1\n", err)
-		fmt.Printf("    Set --hostname to override.\n")
-		return "rancher.127.0.0.1.sslip.io", nil
+		return "", err
 	}
 	return fmt.Sprintf("rancher.%s.sslip.io", ip), nil
+}
+
+// resolveHostnameWithFallback wraps resolveHostname and falls back to
+// "rancher.127.0.0.1.sslip.io" when IP detection fails, printing a warning
+// instead of propagating the error.
+func resolveHostnameWithFallback(explicit string, setFlags []string) string {
+	hostname, err := resolveHostname(explicit, setFlags)
+	if err != nil {
+		fmt.Printf("    Warning: could not detect node IP (%v) — using 127.0.0.1\n", err)
+		fmt.Printf("    Set --hostname to override.\n")
+		return "rancher.127.0.0.1.sslip.io"
+	}
+	return hostname
 }
 
 // injectHostname adds hostname=<h> to sets if not already present.
@@ -286,7 +291,7 @@ func InstallCertManager(version string) error {
 		"https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml",
 		version,
 	)
-	if err := runner.Run("kubectl", "apply", "-f", url); err != nil {
+	if err := runner.Kubectl("apply", "-f", url); err != nil {
 		return fmt.Errorf("failed to apply cert-manager: %w", err)
 	}
 
@@ -294,7 +299,7 @@ func InstallCertManager(version string) error {
 	// ready before Rancher's Helm install can succeed — it validates CRDs and
 	// will 503 if the endpoint isn't up yet.
 	for _, deploy := range []string{"cert-manager", "cert-manager-cainjector", "cert-manager-webhook"} {
-		if err := runner.Run("kubectl", "rollout", "status",
+		if err := runner.Kubectl("rollout", "status",
 			"deployment/"+deploy,
 			"-n", "cert-manager",
 			"--timeout=120s",
@@ -333,7 +338,7 @@ func EnsureHelmRepo(repoName, repoURL string, yes bool) error {
 		}
 		if r.URL == repoURL {
 			fmt.Printf("    Helm repo %q already registered — updating index\n", repoName)
-			return runner.Run("helm", "repo", "update", repoName)
+			return runner.Helm("repo", "update", repoName)
 		}
 		// Repo exists but points to a different URL.
 		fmt.Printf("    Warning: Helm repo %q is registered with a different URL:\n", repoName)
@@ -350,17 +355,17 @@ func EnsureHelmRepo(repoName, repoURL string, yes bool) error {
 				)
 			}
 		}
-		if err := runner.Run("helm", "repo", "add", "--force-update", repoName, repoURL); err != nil {
+		if err := runner.Helm("repo", "add", "--force-update", repoName, repoURL); err != nil {
 			return fmt.Errorf("helm repo update failed: %w", err)
 		}
-		return runner.Run("helm", "repo", "update", repoName)
+		return runner.Helm("repo", "update", repoName)
 	}
 
 	// Repo not registered yet.
-	if err := runner.Run("helm", "repo", "add", repoName, repoURL); err != nil {
+	if err := runner.Helm("repo", "add", repoName, repoURL); err != nil {
 		return fmt.Errorf("helm repo add failed: %w", err)
 	}
-	return runner.Run("helm", "repo", "update", repoName)
+	return runner.Helm("repo", "update", repoName)
 }
 
 // ── Rancher install ──────────────────────────────────────────────────────────
@@ -378,7 +383,7 @@ func Install(namespace string, chart Chart, values HelmValues) error {
 	}
 
 	// Create namespace
-	if err := runner.Run("kubectl", "create", "namespace", namespace); err != nil {
+	if err := runner.Kubectl("create", "namespace", namespace); err != nil {
 		return fmt.Errorf("namespace creation failed: %w", err)
 	}
 
@@ -401,7 +406,7 @@ func Install(namespace string, chart Chart, values HelmValues) error {
 		args = append(args, "--set", s)
 	}
 
-	if err := runner.Run("helm", args...); err != nil {
+	if err := runner.Helm(args...); err != nil {
 		return err
 	}
 
@@ -425,7 +430,7 @@ func WaitReady(namespace string) error {
 
 	// Run rollout status in background
 	go func() {
-		done <- runner.Run("kubectl", "rollout", "status",
+		done <- runner.Kubectl("rollout", "status",
 			"deployment/rancher",
 			"-n", namespace,
 			"--timeout=600s",
@@ -600,7 +605,7 @@ func Upgrade(namespace string, chart Chart, values HelmValues) error {
 		args = append(args, "--set", s)
 	}
 
-	if err := runner.Run("helm", args...); err != nil {
+	if err := runner.Helm(args...); err != nil {
 		return err
 	}
 

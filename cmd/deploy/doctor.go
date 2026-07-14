@@ -79,8 +79,13 @@ func runDoctor(flags *doctorFlags) error {
 	}
 	fmt.Printf("Detected mode: %s\n\n", mode)
 
-	// Create doctor with mode-appropriate checkers
-	d := doctor.NewDoctor(opts)
+	// Build provider to source its prerequisite checkers for this mode.
+	prov, err := buildProvider(mode, "")
+	if err != nil {
+		return err
+	}
+
+	d := doctor.NewDoctor(opts, prov.Checkers()...)
 
 	// Run all checks
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
