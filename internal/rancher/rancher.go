@@ -286,7 +286,7 @@ func InstallCertManager(version string) error {
 		"https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml",
 		version,
 	)
-	if err := runner.Run("kubectl", "apply", "-f", url); err != nil {
+	if err := runner.Kubectl("apply", "-f", url); err != nil {
 		return fmt.Errorf("failed to apply cert-manager: %w", err)
 	}
 
@@ -294,7 +294,7 @@ func InstallCertManager(version string) error {
 	// ready before Rancher's Helm install can succeed — it validates CRDs and
 	// will 503 if the endpoint isn't up yet.
 	for _, deploy := range []string{"cert-manager", "cert-manager-cainjector", "cert-manager-webhook"} {
-		if err := runner.Run("kubectl", "rollout", "status",
+		if err := runner.Kubectl("rollout", "status",
 			"deployment/"+deploy,
 			"-n", "cert-manager",
 			"--timeout=120s",
@@ -333,7 +333,7 @@ func EnsureHelmRepo(repoName, repoURL string, yes bool) error {
 		}
 		if r.URL == repoURL {
 			fmt.Printf("    Helm repo %q already registered — updating index\n", repoName)
-			return runner.Run("helm", "repo", "update", repoName)
+			return runner.Helm("repo", "update", repoName)
 		}
 		// Repo exists but points to a different URL.
 		fmt.Printf("    Warning: Helm repo %q is registered with a different URL:\n", repoName)
@@ -350,17 +350,17 @@ func EnsureHelmRepo(repoName, repoURL string, yes bool) error {
 				)
 			}
 		}
-		if err := runner.Run("helm", "repo", "add", "--force-update", repoName, repoURL); err != nil {
+		if err := runner.Helm("repo", "add", "--force-update", repoName, repoURL); err != nil {
 			return fmt.Errorf("helm repo update failed: %w", err)
 		}
-		return runner.Run("helm", "repo", "update", repoName)
+		return runner.Helm("repo", "update", repoName)
 	}
 
 	// Repo not registered yet.
-	if err := runner.Run("helm", "repo", "add", repoName, repoURL); err != nil {
+	if err := runner.Helm("repo", "add", repoName, repoURL); err != nil {
 		return fmt.Errorf("helm repo add failed: %w", err)
 	}
-	return runner.Run("helm", "repo", "update", repoName)
+	return runner.Helm("repo", "update", repoName)
 }
 
 // ── Rancher install ──────────────────────────────────────────────────────────
@@ -378,7 +378,7 @@ func Install(namespace string, chart Chart, values HelmValues) error {
 	}
 
 	// Create namespace
-	if err := runner.Run("kubectl", "create", "namespace", namespace); err != nil {
+	if err := runner.Kubectl("create", "namespace", namespace); err != nil {
 		return fmt.Errorf("namespace creation failed: %w", err)
 	}
 
@@ -401,7 +401,7 @@ func Install(namespace string, chart Chart, values HelmValues) error {
 		args = append(args, "--set", s)
 	}
 
-	if err := runner.Run("helm", args...); err != nil {
+	if err := runner.Helm(args...); err != nil {
 		return err
 	}
 
@@ -425,7 +425,7 @@ func WaitReady(namespace string) error {
 
 	// Run rollout status in background
 	go func() {
-		done <- runner.Run("kubectl", "rollout", "status",
+		done <- runner.Kubectl("rollout", "status",
 			"deployment/rancher",
 			"-n", namespace,
 			"--timeout=600s",
@@ -600,7 +600,7 @@ func Upgrade(namespace string, chart Chart, values HelmValues) error {
 		args = append(args, "--set", s)
 	}
 
-	if err := runner.Run("helm", args...); err != nil {
+	if err := runner.Helm(args...); err != nil {
 		return err
 	}
 

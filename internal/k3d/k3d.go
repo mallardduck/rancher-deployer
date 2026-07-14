@@ -43,7 +43,7 @@ func CreateCluster(name, k3sVersion string) error {
 	image := k3sVersionToImage(k3sVersion)
 	fmt.Printf("  Creating k3d cluster %q with image %s\n", name, image)
 
-	return runner.Run("k3d", "cluster", "create", name,
+	return runner.K3d("cluster", "create", name,
 		"--image", image,
 		"--wait",
 		// Expose ports needed for Rancher ingress (Traefik loadbalancer)
@@ -54,7 +54,7 @@ func CreateCluster(name, k3sVersion string) error {
 
 // KubeconfigMerge merges the k3d cluster kubeconfig into the default location.
 func KubeconfigMerge(clusterName string) error {
-	return runner.Run("k3d", "kubeconfig", "merge", clusterName, "--kubeconfig-merge-default")
+	return runner.K3d("kubeconfig", "merge", clusterName, "--kubeconfig-merge-default")
 }
 
 // ensureClusterAbsent returns an error if a cluster with the given name exists.

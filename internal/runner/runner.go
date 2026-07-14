@@ -61,3 +61,15 @@ func MustExist(binary string) error {
 func printCmd(name string, args []string) {
 	fmt.Printf("  %s$%s %s %s\n", colorCyan, colorReset, name, strings.Join(args, " "))
 }
+
+func Helm(args ...string) error {
+	return Run("helm", args...)
+}
+
+func K3d(args ...string) error {
+	return Run("k3d", args...)
+}
+
+func Kubectl(args ...string) error {
+	return Run("kubectl", args...)
+}

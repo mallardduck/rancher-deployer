@@ -51,7 +51,7 @@ func Install(version string) error {
 // WaitReady blocks until the k3s node reports Ready.
 func WaitReady() error {
 	fmt.Println("  Waiting for k3s node to become Ready...")
-	return runner.Run("kubectl", "wait",
+	return runner.Kubectl("wait",
 		"--for=condition=Ready",
 		"node", "--all",
 		"--timeout=120s",

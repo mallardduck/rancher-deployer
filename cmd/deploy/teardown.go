@@ -66,13 +66,13 @@ func runTeardown(f *teardownFlags) error {
 
 	// ── Step 1: Uninstall Rancher ────────────────────────────────────────────
 	printStep(1, "Uninstalling Rancher")
-	if err := runner.Run("helm", "uninstall", "rancher", "-n", f.namespace); err != nil {
+	if err := runner.Helm("uninstall", "rancher", "-n", f.namespace); err != nil {
 		printWarning("helm uninstall rancher failed (may not be installed): %v", err)
 	}
 
 	// ── Step 2: Remove cert-manager ──────────────────────────────────────────
 	printStep(2, "Removing cert-manager")
-	if err := runner.Run("kubectl", "delete", "namespace", "cert-manager", "--ignore-not-found"); err != nil {
+	if err := runner.Kubectl("delete", "namespace", "cert-manager", "--ignore-not-found"); err != nil {
 		printWarning("cert-manager namespace removal failed: %v", err)
 	}
 
@@ -80,7 +80,7 @@ func runTeardown(f *teardownFlags) error {
 	printStep(3, "Removing cluster")
 	switch mode {
 	case "k3d":
-		if err := runner.Run("k3d", "cluster", "delete", f.clusterName); err != nil {
+		if err := runner.K3d("cluster", "delete", f.clusterName); err != nil {
 			return fmt.Errorf("k3d cluster delete failed: %w", err)
 		}
 	case "k3s":
