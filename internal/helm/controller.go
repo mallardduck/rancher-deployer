@@ -209,6 +209,7 @@ spec:
   version: {{ .Version }}
   targetNamespace: {{ .TargetNamespace }}
   createNamespace: true
+  failurePolicy: abort
 {{- if .ValuesContent }}
   valuesContent: |-
 {{ .ValuesContent }}
