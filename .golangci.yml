@@ -65,12 +65,12 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/mallardduck/rancher-deployer
+        - github.com/mallardduck
     gci:
       sections:
         - standard
         - default
-        - prefix(github.com/mallardduck/rancher-deployer)
+        - prefix(github.com/mallardduck)
     gofmt:
       simplify: true
 

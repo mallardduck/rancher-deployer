@@ -39,4 +39,5 @@ func init() {
 	rootCmd.AddCommand(newTeardownCmd())
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newDoctorCmd())
+	rootCmd.AddCommand(newSelfUpdateCmd())
 }
