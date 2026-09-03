@@ -285,12 +285,93 @@ func resolveHeadEntry(entries []helmIndexEntry, minor string) (helmIndexEntry, e
 	return candidates[0], nil
 }
 
+// headCommitRe extracts the commit portion of a head build version string,
+// which always ends "-<commit>-head" — e.g. community's
+// "2.15-9f0d0301586ef2c690062d3a42bb3a91edfd3e12-head" (full 40-char SHA) or
+// Prime's "2.16.0-b03c4de-head" (short 7-char SHA). The two editions use
+// different SHA lengths, so matching is done as a prefix, not exact equality.
+var headCommitRe = regexp.MustCompile(`-([0-9a-fA-F]+)-head$`)
+
+// headBuildCommit extracts the commit hash from a head build version string.
+// Returns "" if the string doesn't match the expected "-<commit>-head" shape.
+func headBuildCommit(version string) string {
+	m := headCommitRe.FindStringSubmatch(version)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// commitMatches reports whether entrySHA and input identify the same
+// commit, tolerating a length mismatch in either direction: Prime's head
+// index isn't consistent about SHA length — it used full 40-char SHAs until
+// 2026-08-24, then switched to short 7-char ones — so a user-supplied short
+// hash needs to match a full-length index entry, and a user-supplied full
+// hash (e.g. pasted straight from GitHub) needs to match a short-form index
+// entry. Either is just "one is a prefix of the other," checked both ways.
+func commitMatches(entrySHA, input string) bool {
+	if entrySHA == "" || input == "" {
+		return false
+	}
+	return strings.HasPrefix(entrySHA, input) || strings.HasPrefix(input, entrySHA)
+}
+
+// resolveHeadEntryByCommit picks the head build whose commit hash matches
+// the given (case-insensitive) commit — used to pin an exact,
+// previously-reported head build (e.g. to reproduce a bug) rather than
+// always installing the newest one. If minor is non-empty, only that
+// minor's builds are considered; if empty, every minor in entries is
+// searched (only meaningful for an index that already spans multiple
+// minors to begin with, i.e. Prime's shared head repo — community's
+// per-minor repo always has a minor by this point). Errors if no build
+// matches, or if more than one does (the input wasn't specific enough).
+func resolveHeadEntryByCommit(entries []helmIndexEntry, minor, commit string) (helmIndexEntry, error) {
+	commit = strings.ToLower(commit)
+	var candidates []helmIndexEntry
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Version, "-head") {
+			continue
+		}
+		if minor != "" && versionMinor(e.Version) != minor {
+			continue
+		}
+		if commitMatches(strings.ToLower(headBuildCommit(e.Version)), commit) {
+			candidates = append(candidates, e)
+		}
+	}
+	switch len(candidates) {
+	case 0:
+		if minor != "" {
+			return helmIndexEntry{}, fmt.Errorf(
+				"no head build found for Rancher %s matching commit %q — it may have been pruned from the index already, or the minor/commit don't match",
+				minor, commit,
+			)
+		}
+		return helmIndexEntry{}, fmt.Errorf(
+			"no head build found matching commit %q — it may have been pruned from the index already",
+			commit,
+		)
+	case 1:
+		return candidates[0], nil
+	default:
+		var versions []string
+		for _, c := range candidates {
+			versions = append(versions, fmt.Sprintf("%s (created %s)", c.Version, c.Created))
+		}
+		return helmIndexEntry{}, fmt.Errorf(
+			"commit %q matches more than one head build — use a longer prefix:\n  %s",
+			commit, strings.Join(versions, "\n  "),
+		)
+	}
+}
+
 // ResolveChart determines the full Chart (repo, name, version, prerelease)
 // for a given edition/channel/version input.
 //
 // versionInput may be:
 //   - empty — resolve the absolute newest version in the channel (not valid
-//     for the head channel, which is always minor-scoped).
+//     for the head channel, which is always minor-scoped — see
+//     ResolveHeadChartByCommit for the one case that doesn't need a minor).
 //   - a bare minor, e.g. "2.15" — resolve the newest patch in that minor
 //     (stable/latest/alpha), or the newest head build for that minor (head).
 //   - an exact version, e.g. "2.8.5" or "2.9.0-rc1" — used as-is with no
@@ -307,23 +388,7 @@ func ResolveChart(prime bool, channel, versionInput string) (Chart, error) {
 				versionInput,
 			)
 		}
-		repoURL := headRepoURL(prime, minor)
-		entries, err := fetchIndex(repoURL)
-		if err != nil {
-			return Chart{}, err
-		}
-		entry, err := resolveHeadEntry(entries, minor)
-		if err != nil {
-			return Chart{}, err
-		}
-		version := strings.TrimPrefix(entry.Version, "v")
-		return Chart{
-			RepoName:     headRepoName(prime, minor),
-			RepoURL:      repoURL,
-			ChartName:    chartName,
-			Version:      version,
-			IsPrerelease: true,
-		}, nil
+		return resolveHeadChart(prime, minor, "")
 	}
 
 	repoURL, ok := repoURLs[prime][channel]
@@ -360,6 +425,58 @@ func ResolveChart(prime bool, channel, versionInput string) (Chart, error) {
 		ChartName:    chartName,
 		Version:      version,
 		IsPrerelease: k8sresolver.IsPrerelease(version),
+	}, nil
+}
+
+// ResolveHeadChartByCommit resolves a head-channel Chart pinned to the head
+// build whose commit hash starts with commit, instead of the newest one —
+// e.g. to reproduce a bug reported against a specific build.
+//
+// minor may be empty only when prime is true: Prime's head builds all live
+// in one shared index across every minor, so a commit alone is enough to
+// find it. Community's head builds live in a dedicated per-minor repo, so a
+// minor is always required there.
+func ResolveHeadChartByCommit(prime bool, minor, commit string) (Chart, error) {
+	minor = versionMinor(strings.TrimPrefix(minor, "v"))
+	if commit == "" {
+		return Chart{}, fmt.Errorf("commit is required")
+	}
+	if minor == "" && !prime {
+		return Chart{}, fmt.Errorf(
+			"community head builds are stored per-minor, so a Rancher minor version is required, e.g. --rancher-version 2.15",
+		)
+	}
+	return resolveHeadChart(prime, minor, commit)
+}
+
+// resolveHeadChart is the shared implementation behind ResolveChart's head
+// branch and ResolveHeadChartByCommit: fetches the appropriate head repo's
+// index and resolves either the newest head build for minor (commit ==
+// ""), or the one matching commit.
+func resolveHeadChart(prime bool, minor, commit string) (Chart, error) {
+	// headRepoURL/headRepoName for prime ignore minor entirely (Prime has
+	// one shared head repo regardless), so this is safe even when minor is
+	// "" — which can only happen via ResolveHeadChartByCommit with prime.
+	repoURL := headRepoURL(prime, minor)
+	entries, err := fetchIndex(repoURL)
+	if err != nil {
+		return Chart{}, err
+	}
+	var entry helmIndexEntry
+	if commit != "" {
+		entry, err = resolveHeadEntryByCommit(entries, minor, commit)
+	} else {
+		entry, err = resolveHeadEntry(entries, minor)
+	}
+	if err != nil {
+		return Chart{}, err
+	}
+	return Chart{
+		RepoName:     headRepoName(prime, minor),
+		RepoURL:      repoURL,
+		ChartName:    chartName,
+		Version:      strings.TrimPrefix(entry.Version, "v"),
+		IsPrerelease: true,
 	}, nil
 }
 

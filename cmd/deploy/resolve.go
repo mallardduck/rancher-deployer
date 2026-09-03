@@ -21,6 +21,7 @@ func newResolveCmd() *cobra.Command {
 	var outputFormat string
 	var prime bool
 	var channel string
+	var commit string
 
 	cmd := &cobra.Command{
 		Use:   "resolve",
@@ -41,7 +42,13 @@ func newResolveCmd() *cobra.Command {
   rancher-deployer resolve --rancher-version 2.8
 
   # Auto-resolve the newest head build for a minor
-  rancher-deployer resolve --channel head --rancher-version 2.15`,
+  rancher-deployer resolve --channel head --rancher-version 2.15
+
+  # Resolve a specific reported head build by commit
+  rancher-deployer resolve --channel head --rancher-version 2.15 --commit b03c4de
+
+  # Prime head builds share one repo across minors, so a commit alone is enough
+  rancher-deployer resolve --prime --channel head --commit b03c4de`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			normalizedChannel, err := rancher.NormaliseChannel(channel)
 			if err != nil {
@@ -50,7 +57,7 @@ func newResolveCmd() *cobra.Command {
 
 			requestedVersion := strings.TrimPrefix(rancherVersion, "v")
 
-			chart, err := rancher.ResolveChart(prime, normalizedChannel, requestedVersion)
+			chart, err := resolveChart(prime, normalizedChannel, requestedVersion, commit)
 			if err != nil {
 				return fmt.Errorf("could not resolve Rancher version: %w", err)
 			}
@@ -140,9 +147,12 @@ func newResolveCmd() *cobra.Command {
 				// Human-readable output (default)
 				fmt.Println()
 				if autoResolved {
-					if requestedVersion == "" {
+					switch {
+					case requestedVersion == "" && commit != "":
+						printInfo("Resolved v%s from commit %s (channel: %s)", rancherVersion, commit, normalizedChannel)
+					case requestedVersion == "":
 						printInfo("Auto-resolved latest Rancher version: v%s (channel: %s)", rancherVersion, normalizedChannel)
-					} else {
+					default:
 						printInfo("Auto-resolved v%s from requested %s (channel: %s)", rancherVersion, requestedVersion, normalizedChannel)
 					}
 					fmt.Println()
@@ -178,6 +188,7 @@ func newResolveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format: k3s-version, k3d-version, k8s-version, json (default: human-readable)")
 	cmd.Flags().BoolVar(&prime, "prime", false, "Use Rancher Prime repository for version resolution")
 	cmd.Flags().StringVar(&channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha, head (continuously-published head builds — requires a minor, e.g. --rancher-version 2.15)")
+	cmd.Flags().StringVar(&commit, "commit", "", "Pin --channel head to the head build whose commit starts with this (instead of the newest one). With --prime, --rancher-version can be omitted — Prime head builds share one repo across minors")
 
 	return cmd
 }

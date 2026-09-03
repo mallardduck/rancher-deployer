@@ -23,6 +23,7 @@ type deployFlags struct {
 	rancherVersion    string
 	k8sVersion        string
 	channel           string
+	commit            string // head channel only — pin to a specific head build
 	mode              string // "", "k3s", "k3d"
 	hostname          string
 	namespace         string
@@ -54,16 +55,20 @@ func newDeployCmd() *cobra.Command {
     --set auditLog.level=1
 
   # Dry run — print resolved plan without executing
-  rancher-deployer deploy --rancher-version 2.8.5 --dry-run`,
+  rancher-deployer deploy --rancher-version 2.8.5 --dry-run
+
+  # Reproduce a bug reported against a specific head build
+  rancher-deployer deploy --channel head --rancher-version 2.15 --commit b03c4de`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDeploy(f)
 		},
 	}
 
-	cmd.Flags().StringVar(&f.rancherVersion, "rancher-version", "", "Rancher version to install, e.g. 2.8.5. A bare minor (e.g. 2.8) auto-resolves the newest patch (or newest head build for --channel head). Required")
+	cmd.Flags().StringVar(&f.rancherVersion, "rancher-version", "", "Rancher version to install, e.g. 2.8.5. A bare minor (e.g. 2.8) auto-resolves the newest patch (or newest head build for --channel head). Required, unless using --prime --channel head --commit")
 	cmd.Flags().StringVar(&f.k8sVersion, "k8s-version", "", "Target k8s major.minor, e.g. 1.28 (default: auto-select from support matrix)")
 	cmd.Flags().BoolVar(&f.prime, "prime", false, "Use Rancher Prime instead of community edition")
 	cmd.Flags().StringVar(&f.channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha, head (continuously-published head builds — requires a minor, e.g. --rancher-version 2.15)")
+	cmd.Flags().StringVar(&f.commit, "commit", "", "Pin --channel head to the head build whose commit starts with this (instead of the newest one) — e.g. to reproduce a bug reported against a specific build")
 	cmd.Flags().StringVar(&f.mode, "mode", "", "Force install mode: k3s or k3d (default: auto-detect)")
 	cmd.Flags().StringVar(&f.hostname, "hostname", "", "Hostname for Rancher ingress (default: <node-ip>.sslip.io)")
 	cmd.Flags().StringVar(&f.namespace, "namespace", "cattle-system", "Kubernetes namespace for Rancher")
@@ -73,8 +78,6 @@ func newDeployCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.clusterName, "cluster-name", "rancher-local", "k3d cluster name (k3d mode only)")
 	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "Skip confirmation prompt (for CI/non-interactive use)")
 	cmd.Flags().StringVar(&f.bootstrapPassword, "bootstrap-password", "letsmein", "Initial admin password for Rancher")
-
-	_ = cmd.MarkFlagRequired("rancher-version")
 
 	return cmd
 }
@@ -86,6 +89,12 @@ func runDeploy(f *deployFlags) error {
 	channel, err := rancher.NormaliseChannel(f.channel)
 	if err != nil {
 		return err
+	}
+
+	// --rancher-version is required, except for the one case where a commit
+	// alone is enough to resolve a chart: --prime --channel head --commit.
+	if f.rancherVersion == "" && (channel != rancher.ChannelHead || !f.prime || f.commit == "") {
+		return fmt.Errorf("--rancher-version is required (unless using --prime --channel head --commit)")
 	}
 
 	fmt.Println()
@@ -107,42 +116,62 @@ func runDeploy(f *deployFlags) error {
 		return err
 	}
 
-	// ── Step 2: Resolve Rancher support matrix ───────────────────────────────
-	printStep(2, "Fetching Rancher support matrix")
+	// ── Step 2: Resolve Helm chart details ──────────────────────────────────
+	// Resolved before the support matrix because commit-only resolution
+	// (--prime --channel head --commit, no --rancher-version) doesn't know
+	// its minor until the chart is resolved.
+	printStep(2, "Resolving Helm chart")
+	chartRef, err := resolveChart(f.prime, channel, f.rancherVersion, f.commit)
+	if err != nil {
+		return err
+	}
+	printInfo("Chart: %s", chartRef.String())
+
+	// ── Step 3: Resolve Rancher support matrix ───────────────────────────────
+	printStep(3, "Fetching Rancher support matrix")
+	kdmTarget := f.rancherVersion
+	if kdmTarget == "" {
+		// Commit-only resolution: derive just the minor from the resolved
+		// chart version instead, so the KDM plan line shows a clean minor
+		// rather than the full head build string. Safe because community
+		// always requires an explicit minor and can never reach this branch
+		// with an empty f.rancherVersion — see ResolveChart.
+		kdmTarget = minorOf(chartRef.Version)
+	}
 	var matrix *kdm.SupportMatrix
 	var kdmFlavor kdm.KDMFlavor
 	var usedFallbackKDM bool
 	if channel == rancher.ChannelHead {
-		result, resultErr := kdm.FetchSupportMatrixWithFallback(f.rancherVersion)
+		result, resultErr := kdm.FetchSupportMatrixWithFallback(kdmTarget)
 		if resultErr != nil {
 			return fmt.Errorf("support matrix lookup failed: %w", resultErr)
 		}
 		matrix, kdmFlavor, usedFallbackKDM = result.Matrix, result.Flavor, result.UsedFallbackMinor
 		if usedFallbackKDM {
-			printWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", f.rancherVersion)
+			printWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", kdmTarget)
 		}
 	} else {
-		matrix, err = kdm.FetchSupportMatrix(f.rancherVersion)
+		matrix, err = kdm.FetchSupportMatrix(kdmTarget)
 		if err != nil {
 			return fmt.Errorf("support matrix lookup failed: %w", err)
 		}
 	}
 	printInfo("Rancher v%s supports k8s versions: %s",
-		f.rancherVersion, strings.Join(matrix.SupportedMinors(), ", "))
+		chartRef.Version, strings.Join(matrix.SupportedMinors(), ", "))
 
-	// ── Step 3: Resolve k8s version ─────────────────────────────────────────
-	printStep(3, "Resolving Kubernetes version")
+	// ── Step 4: Resolve k8s version ─────────────────────────────────────────
+	printStep(4, "Resolving Kubernetes version")
 	resolvedK8s, err := k8sresolver.ResolveK8s(f.k8sVersion, matrix)
 	if err != nil {
 		return err
 	}
 	printInfo("Target k8s version: %s", resolvedK8s)
 
-	// ── Step 4: Resolve cluster version ──────────────────────────────────────
+	// ── Step 5: Resolve cluster version ──────────────────────────────────────
 	if mode == "existing" {
-		printStep(4, "Validating existing cluster")
+		printStep(5, "Validating existing cluster")
 	} else {
-		printStep(4, "Resolving k3s/k3d version")
+		printStep(5, "Resolving k3s/k3d version")
 	}
 	var clusterVersion string
 	clusterVersion, err = clusterProvider.ResolveClusterVersion(context.Background(), resolvedK8s)
@@ -153,21 +182,13 @@ func runDeploy(f *deployFlags) error {
 		printInfo("Cluster version: %s", clusterVersion)
 	}
 
-	// ── Step 5: Resolve cert-manager version ─────────────────────────────────
-	printStep(5, "Resolving cert-manager version")
+	// ── Step 6: Resolve cert-manager version ─────────────────────────────────
+	printStep(6, "Resolving cert-manager version")
 	certManagerVersion, err := rancher.ResolveCertManagerVersion()
 	if err != nil {
 		return err
 	}
 	printInfo("cert-manager version: %s", certManagerVersion)
-
-	// ── Step 6: Resolve Helm chart details ──────────────────────────────────
-	printStep(6, "Resolving Helm chart")
-	chartRef, err := rancher.ResolveChart(f.prime, channel, f.rancherVersion)
-	if err != nil {
-		return err
-	}
-	printInfo("Chart: %s", chartRef.String())
 
 	// ── Step 7: Build Helm values ────────────────────────────────────────────
 	printStep(7, "Building Helm values")
@@ -255,15 +276,45 @@ func buildProvider(mode, clusterName string) (provider.Provider, error) {
 	}
 }
 
+// minorOf extracts the "MAJOR.MINOR" prefix from a version string — used to
+// derive a clean KDM lookup target from a fully-resolved chart version when
+// no minor was given directly (commit-only resolution).
+func minorOf(version string) string {
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return version
+	}
+	return parts[0] + "." + parts[1]
+}
+
+// resolveChart dispatches to rancher.ResolveChart or
+// rancher.ResolveHeadChartByCommit depending on whether a commit was given,
+// and validates that --commit is only used with --channel head.
+func resolveChart(prime bool, channel, versionInput, commit string) (rancher.Chart, error) {
+	if commit == "" {
+		return rancher.ResolveChart(prime, channel, versionInput)
+	}
+	if channel != rancher.ChannelHead {
+		return rancher.Chart{}, fmt.Errorf("--commit only applies to --channel head")
+	}
+	return rancher.ResolveHeadChartByCommit(prime, versionInput, commit)
+}
+
 // versionLine formats the Rancher version line for a plan/upgrade summary,
 // noting the original request alongside the resolved version whenever a bare
 // minor (or head channel) caused them to differ — e.g.
-// "v2.15.2-fbf2130-head (requested: 2.15, Prime head)".
-func versionLine(requested, resolved, edition string) string {
-	if requested == resolved {
+// "v2.15.2-fbf2130-head (requested: 2.15, Prime head)". When no minor was
+// requested at all (commit-only resolution), notes the commit instead — e.g.
+// "v2.16.0-b03c4de-head (Prime head, commit: b03c4de)".
+func versionLine(requested, resolved, edition, commit string) string {
+	switch {
+	case requested == "" && commit != "":
+		return fmt.Sprintf("v%s (%s, commit: %s)", resolved, edition, commit)
+	case requested == resolved:
 		return fmt.Sprintf("v%s (%s)", resolved, edition)
+	default:
+		return fmt.Sprintf("v%s (requested: %s, %s)", resolved, requested, edition)
 	}
-	return fmt.Sprintf("v%s (requested: %s, %s)", resolved, requested, edition)
 }
 
 // kdmLine formats the "which Rancher version's KDM data are we trusting"
@@ -296,7 +347,7 @@ func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer, kdmVer stri
 	}
 	edition += " " + f.channel
 	fmt.Printf("%s━━ Deployment Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
-	fmt.Printf("  Rancher version  : %s\n", versionLine(f.rancherVersion, chart.Version, edition))
+	fmt.Printf("  Rancher version  : %s\n", versionLine(f.rancherVersion, chart.Version, edition, f.commit))
 	fmt.Printf("  KDM              : %s\n", kdmVer)
 	fmt.Printf("  Kubernetes       : %s\n", k8sVer)
 	fmt.Printf("  Cluster tool     : %s @ %s\n", mode, clusterVer)

@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -207,6 +208,23 @@ func TestResolveChartHeadRequiresMinor(t *testing.T) {
 	}
 }
 
+// ── ResolveHeadChartByCommit validation (no network needed — these all
+// short-circuit before fetching an index) ───────────────────────────────────
+
+func TestResolveHeadChartByCommitRequiresCommit(t *testing.T) {
+	_, err := ResolveHeadChartByCommit(true, "2.15", "")
+	if err == nil {
+		t.Error("expected error when commit is empty, got nil")
+	}
+}
+
+func TestResolveHeadChartByCommitCommunityRequiresMinor(t *testing.T) {
+	_, err := ResolveHeadChartByCommit(false, "", "b03c4de")
+	if err == nil {
+		t.Error("expected error for community with no minor, got nil")
+	}
+}
+
 // ── Realistic mixed-index fixtures ───────────────────────────────────────────
 //
 // primeLatestFixture is a frozen, hand-written snapshot — not fetched live —
@@ -283,6 +301,137 @@ func TestResolveHeadEntry_EstablishedMinorPicksNewestHeadNotGA(t *testing.T) {
 	if got.Version != want {
 		t.Errorf("resolveHeadEntry(\"2.15\") = %q, want %q", got.Version, want)
 	}
+}
+
+// ── headBuildCommit / resolveHeadEntryByCommit ───────────────────────────────
+
+func TestHeadBuildCommit(t *testing.T) {
+	cases := []struct {
+		version string
+		want    string
+	}{
+		{"2.16.0-b03c4de-head", "b03c4de"}, // prime, short SHA
+		{"2.15-9f0d0301586ef2c690062d3a42bb3a91edfd3e12-head", "9f0d0301586ef2c690062d3a42bb3a91edfd3e12"}, // community, full SHA
+		{"2.15.1", ""},     // GA, not a head build
+		{"2.15.1-rc2", ""}, // RC, not a head build
+		{"bogus", ""},
+	}
+	for _, c := range cases {
+		got := headBuildCommit(c.version)
+		if got != c.want {
+			t.Errorf("headBuildCommit(%q) = %q, want %q", c.version, got, c.want)
+		}
+	}
+}
+
+// TestCommitMatches covers the length-mismatch cases discovered live:
+// Prime's head index used full 40-char SHAs until 2026-08-24, then switched
+// to short 7-char ones — so matching has to work in both directions, not
+// just "does the index entry start with what the user typed."
+func TestCommitMatches(t *testing.T) {
+	cases := []struct {
+		name, entrySHA, input string
+		want                  bool
+	}{
+		{"short input, short entry, exact", "de47bc4", "de47bc4", true},
+		{"short input, short entry, prefix", "de47bc4", "de47", true},
+		{"short input, full entry, prefix", "7ee3371f7d4458b53ca126d7a180db1148633f4c", "7ee3371", true},
+		{"full input, short entry", "de47bc4", "de47bc4a4171597c4744f82a77b5adb94f46ce3a", true}, // the exact case found live
+		{"full input, full entry, exact", "7ee3371f7d4458b53ca126d7a180db1148633f4c", "7ee3371f7d4458b53ca126d7a180db1148633f4c", true},
+		{"no relation", "de47bc4", "b03c4de", false},
+		{"empty entry", "", "de47bc4", false},
+		{"empty input", "de47bc4", "", false},
+		{"both empty", "", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := commitMatches(c.entrySHA, c.input)
+			if got != c.want {
+				t.Errorf("commitMatches(%q, %q) = %v, want %v", c.entrySHA, c.input, got, c.want)
+			}
+		})
+	}
+}
+
+func TestResolveHeadEntryByCommit_ScopedToMinor(t *testing.T) {
+	entries := primeLatestFixture()
+
+	t.Run("matches within the given minor", func(t *testing.T) {
+		got, err := resolveHeadEntryByCommit(entries, "2.15", "fbf2130")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.Version != "2.15.2-fbf2130-head" {
+			t.Errorf("got %q, want %q", got.Version, "2.15.2-fbf2130-head")
+		}
+	})
+
+	t.Run("full commit hash matches a short-hash index entry", func(t *testing.T) {
+		// "2.16.0-de47bc4-head" only has the short form in the index (see
+		// primeLatestFixture); a user pasting the full 40-char SHA (e.g.
+		// straight from GitHub) must still find it.
+		got, err := resolveHeadEntryByCommit(entries, "2.16", "de47bc4a4171597c4744f82a77b5adb94f46ce3a")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.Version != "2.16.0-de47bc4-head" {
+			t.Errorf("got %q, want %q", got.Version, "2.16.0-de47bc4-head")
+		}
+	})
+
+	t.Run("case-insensitive prefix match", func(t *testing.T) {
+		got, err := resolveHeadEntryByCommit(entries, "2.16", "DE47")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.Version != "2.16.0-de47bc4-head" {
+			t.Errorf("got %q, want %q", got.Version, "2.16.0-de47bc4-head")
+		}
+	})
+
+	t.Run("commit belongs to a different minor", func(t *testing.T) {
+		// de47bc4 is a 2.16 build; asking for it under 2.15 must not match.
+		_, err := resolveHeadEntryByCommit(entries, "2.15", "de47")
+		if err == nil {
+			t.Error("expected error when commit doesn't belong to the given minor, got nil")
+		}
+	})
+
+	t.Run("no match", func(t *testing.T) {
+		_, err := resolveHeadEntryByCommit(entries, "2.15", "0000000")
+		if err == nil {
+			t.Error("expected error for unmatched commit, got nil")
+		}
+	})
+}
+
+func TestResolveHeadEntryByCommit_AnyMinor(t *testing.T) {
+	entries := primeLatestFixture()
+
+	t.Run("unique match across minors", func(t *testing.T) {
+		// de47bc4 only appears under 2.16; searching with no minor filter
+		// (minor == "") must still find it uniquely.
+		got, err := resolveHeadEntryByCommit(entries, "", "de47")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.Version != "2.16.0-de47bc4-head" {
+			t.Errorf("got %q, want %q", got.Version, "2.16.0-de47bc4-head")
+		}
+	})
+
+	t.Run("ambiguous prefix errors and lists candidates", func(t *testing.T) {
+		// Both "fbf2130" (2.15) and "ff28ae6aea8dcb820bcc2ff8bfd1bc45d4e2ee65"
+		// (2.16) start with "f" — a short prefix searched across all minors
+		// must fail rather than silently pick one.
+		_, err := resolveHeadEntryByCommit(entries, "", "f")
+		if err == nil {
+			t.Fatal("expected error for an ambiguous commit prefix, got nil")
+		}
+		if !strings.Contains(err.Error(), "2.15.2-fbf2130-head") || !strings.Contains(err.Error(), "2.16.0-ff28ae") {
+			t.Errorf("error should list both candidates, got: %v", err)
+		}
+	})
 }
 
 func TestFetchLatestVersion_ExcludesHeadBuilds(t *testing.T) {
