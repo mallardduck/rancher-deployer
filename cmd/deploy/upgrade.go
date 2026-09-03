@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
 	"github.com/mallardduck/rancher-deployer/internal/upgrade"
@@ -43,10 +42,10 @@ func newUpgradeCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&f.rancherVersion, "rancher-version", "", "Target Rancher version to upgrade to (required)")
+	cmd.Flags().StringVar(&f.rancherVersion, "rancher-version", "", "Target Rancher version to upgrade to, e.g. 2.8.6. A bare minor (e.g. 2.9) auto-resolves the newest patch (or newest head build for --channel head). Required")
 	cmd.Flags().StringVar(&f.namespace, "namespace", "cattle-system", "Namespace where Rancher is installed")
 	cmd.Flags().BoolVar(&f.prime, "prime", false, "Use Rancher Prime chart")
-	cmd.Flags().StringVar(&f.channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha")
+	cmd.Flags().StringVar(&f.channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha, head (continuously-published head builds — requires a minor, e.g. --rancher-version 2.15)")
 	cmd.Flags().StringVar(&f.valuesFile, "values-file", "", "Path to YAML file with additional Helm values")
 	cmd.Flags().StringArrayVar(&f.helmSet, "set", nil, "Override Helm chart value (repeatable): --set key=value")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print resolved plan without executing")
@@ -60,7 +59,11 @@ func newUpgradeCmd() *cobra.Command {
 
 func runUpgrade(f *upgradeFlags) error {
 	f.rancherVersion = strings.TrimPrefix(f.rancherVersion, "v")
-	isPrerelease := k8sresolver.IsPrerelease(f.rancherVersion)
+
+	channel, err := rancher.NormaliseChannel(f.channel)
+	if err != nil {
+		return err
+	}
 
 	fmt.Println()
 	printBanner()
@@ -92,7 +95,16 @@ func runUpgrade(f *upgradeFlags) error {
 	}
 	printInfo("Cluster k8s: %s", clusterK8s)
 
-	matrix, err := kdm.FetchSupportMatrix(f.rancherVersion)
+	var matrix *kdm.SupportMatrix
+	if channel == rancher.ChannelHead {
+		var usedFallback bool
+		matrix, usedFallback, err = kdm.FetchSupportMatrixWithFallback(f.rancherVersion)
+		if err == nil && usedFallback {
+			printWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", f.rancherVersion)
+		}
+	} else {
+		matrix, err = kdm.FetchSupportMatrix(f.rancherVersion)
+	}
 	if err != nil {
 		if !f.force {
 			return fmt.Errorf("support matrix lookup failed: %w", err)
@@ -121,11 +133,10 @@ func runUpgrade(f *upgradeFlags) error {
 
 	// ── Step 5: Resolve chart ─────────────────────────────────────────────────
 	printStep(5, "Resolving Helm chart")
-	channel, err := rancher.NormaliseChannel(f.channel)
+	chartRef, err := rancher.ResolveChart(f.prime, channel, f.rancherVersion)
 	if err != nil {
 		return err
 	}
-	chartRef := rancher.ChartRef(f.prime, isPrerelease, channel, f.rancherVersion)
 	printInfo("Chart: %s", chartRef.String())
 
 	// ── Step 6: Build Helm values (no bootstrapPassword on upgrade) ───────────
@@ -176,7 +187,7 @@ func runUpgrade(f *upgradeFlags) error {
 	}
 
 	fmt.Println()
-	printSuccess("Rancher upgraded to v%s successfully!", f.rancherVersion)
+	printSuccess("Rancher upgraded to v%s successfully!", chartRef.Version)
 	fmt.Println()
 
 	return nil
@@ -190,7 +201,7 @@ func printUpgradePlan(f *upgradeFlags, currentVersion, clusterK8s string, chart 
 	edition += " " + f.channel
 	fmt.Printf("%s━━ Upgrade Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
 	fmt.Printf("  From             : v%s\n", currentVersion)
-	fmt.Printf("  To               : v%s (%s)\n", f.rancherVersion, edition)
+	fmt.Printf("  To               : %s\n", versionLine(f.rancherVersion, chart.Version, edition))
 	fmt.Printf("  Cluster k8s      : %s\n", clusterK8s)
 	fmt.Printf("  Helm chart       : %s\n", chart.String())
 	fmt.Printf("  Namespace        : %s\n", f.namespace)
