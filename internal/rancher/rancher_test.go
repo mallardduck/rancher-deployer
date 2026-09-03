@@ -60,6 +60,37 @@ func TestNormaliseChannelHead(t *testing.T) {
 	}
 }
 
+// ── ParseFailurePolicy ───────────────────────────────────────────────────────
+
+func TestParseFailurePolicy(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{input: "", want: FailurePolicyAbort, wantErr: false},
+		{input: "abort", want: FailurePolicyAbort, wantErr: false},
+		{input: "Abort", want: FailurePolicyAbort, wantErr: false},
+		{input: "ABORT", want: FailurePolicyAbort, wantErr: false},
+		{input: "reinstall", want: FailurePolicyReinstall, wantErr: false},
+		{input: "Reinstall", want: FailurePolicyReinstall, wantErr: false},
+		{input: "invalid", want: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := ParseFailurePolicy(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseFailurePolicy(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("ParseFailurePolicy(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 // ── headRepoURL / headRepoName ─────────────────────────────────────────────
 
 func TestHeadRepoURL(t *testing.T) {

@@ -192,6 +192,7 @@ type helmChartData struct {
 	RepoURL         string
 	Version         string
 	TargetNamespace string
+	FailurePolicy   string
 	ValuesContent   string // pre-indented; empty string omits the field entirely
 }
 
@@ -209,7 +210,7 @@ spec:
   version: {{ .Version }}
   targetNamespace: {{ .TargetNamespace }}
   createNamespace: true
-  failurePolicy: abort
+  failurePolicy: {{ .FailurePolicy }}
 {{- if .ValuesContent }}
   valuesContent: |-
 {{ .ValuesContent }}
@@ -224,12 +225,18 @@ func (c *Controller) applyChartCR(namespace string, chart rancher.Chart, values 
 		return fmt.Errorf("building valuesContent: %w", err)
 	}
 
+	failurePolicy, err := rancher.ParseFailurePolicy(values.FailurePolicy)
+	if err != nil {
+		return err
+	}
+
 	var buf bytes.Buffer
 	if err := helmChartCRTmpl.Execute(&buf, helmChartData{
 		ChartName:       chart.ChartName,
 		RepoURL:         chart.RepoURL,
 		Version:         chart.Version,
 		TargetNamespace: namespace,
+		FailurePolicy:   failurePolicy,
 		ValuesContent:   indentBlock(strings.TrimRight(valuesContent, "\n"), "    "),
 	}); err != nil {
 		return fmt.Errorf("rendering HelmChart manifest: %w", err)

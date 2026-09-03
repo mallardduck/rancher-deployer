@@ -526,11 +526,41 @@ func compareRancherVersions(a, b string) int {
 
 // ── Helm values ──────────────────────────────────────────────────────────────
 
+// FailurePolicy controls what happens when a Helm install/upgrade fails.
+//
+//   - FailurePolicyAbort (default): leave the failed release/Job in place for
+//     inspection; nothing is retried or cleaned up automatically.
+//   - FailurePolicyReinstall: recover automatically instead of leaving broken
+//     state. The exact mechanism is backend-specific: the helm-controller
+//     Backend sets the HelmChart CRD's spec.failurePolicy to "reinstall" (the
+//     controller deletes and retries the Job from scratch); the CLI Backend
+//     passes --atomic to helm (which rolls back an upgrade, or uninstalls a
+//     failed install) — not a literal retry loop, just the closest available
+//     "don't leave it broken" behavior for a one-shot helm invocation.
+const (
+	FailurePolicyAbort     = "abort"
+	FailurePolicyReinstall = "reinstall"
+)
+
+// ParseFailurePolicy validates a --failure-policy value, defaulting an empty
+// string to FailurePolicyAbort.
+func ParseFailurePolicy(policy string) (string, error) {
+	switch strings.ToLower(policy) {
+	case "", FailurePolicyAbort:
+		return FailurePolicyAbort, nil
+	case FailurePolicyReinstall:
+		return FailurePolicyReinstall, nil
+	default:
+		return "", fmt.Errorf("unknown failure policy %q: must be abort or reinstall", policy)
+	}
+}
+
 // HelmValues holds everything needed to construct the Helm install command.
 type HelmValues struct {
-	ValuesFile string   // --values <file>
-	Hostname   string   // resolved hostname
-	SetFlags   []string // --set key=value entries
+	ValuesFile    string   // --values <file>
+	Hostname      string   // resolved hostname
+	FailurePolicy string   // "" is treated as FailurePolicyAbort by consumers
+	SetFlags      []string // --set key=value entries
 }
 
 // BuildHelmValues validates the values file (if given) and assembles the
@@ -836,6 +866,9 @@ func Install(namespace string, chart Chart, values HelmValues) error {
 	for _, s := range values.SetFlags {
 		args = append(args, "--set", s)
 	}
+	if values.FailurePolicy == FailurePolicyReinstall {
+		args = append(args, "--atomic")
+	}
 
 	if err := runner.Helm(args...); err != nil {
 		return err
@@ -1034,6 +1067,9 @@ func Upgrade(namespace string, chart Chart, values HelmValues) error {
 	}
 	for _, s := range values.SetFlags {
 		args = append(args, "--set", s)
+	}
+	if values.FailurePolicy == FailurePolicyReinstall {
+		args = append(args, "--atomic")
 	}
 
 	if err := runner.Helm(args...); err != nil {
