@@ -96,10 +96,11 @@ func runUpgrade(f *upgradeFlags) error {
 	printInfo("Cluster k8s: %s", clusterK8s)
 
 	var matrix *kdm.SupportMatrix
+	var kdmFlavor kdm.KDMFlavor
+	var usedFallbackKDM bool
 	if channel == rancher.ChannelHead {
-		var usedFallback bool
-		matrix, usedFallback, err = kdm.FetchSupportMatrixWithFallback(f.rancherVersion)
-		if err == nil && usedFallback {
+		matrix, kdmFlavor, usedFallbackKDM, err = kdm.FetchSupportMatrixWithFallback(f.rancherVersion)
+		if err == nil && usedFallbackKDM {
 			printWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", f.rancherVersion)
 		}
 	} else {
@@ -154,7 +155,7 @@ func runUpgrade(f *upgradeFlags) error {
 
 	// ── Print plan ────────────────────────────────────────────────────────────
 	fmt.Println()
-	printUpgradePlan(f, currentVersion, clusterK8s, chartRef)
+	printUpgradePlan(f, currentVersion, clusterK8s, kdmLine(matrix, kdmFlavor, usedFallbackKDM), chartRef)
 
 	if f.dryRun {
 		fmt.Println()
@@ -193,7 +194,7 @@ func runUpgrade(f *upgradeFlags) error {
 	return nil
 }
 
-func printUpgradePlan(f *upgradeFlags, currentVersion, clusterK8s string, chart rancher.Chart) {
+func printUpgradePlan(f *upgradeFlags, currentVersion, clusterK8s, kdmVer string, chart rancher.Chart) { //nolint:revive // 5 args are all distinct plan fields; a wrapper struct would add noise without clarity
 	edition := "Community"
 	if f.prime {
 		edition = "Prime"
@@ -202,6 +203,7 @@ func printUpgradePlan(f *upgradeFlags, currentVersion, clusterK8s string, chart 
 	fmt.Printf("%s━━ Upgrade Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
 	fmt.Printf("  From             : v%s\n", currentVersion)
 	fmt.Printf("  To               : %s\n", versionLine(f.rancherVersion, chart.Version, edition))
+	fmt.Printf("  KDM              : %s\n", kdmVer)
 	fmt.Printf("  Cluster k8s      : %s\n", clusterK8s)
 	fmt.Printf("  Helm chart       : %s\n", chart.String())
 	fmt.Printf("  Namespace        : %s\n", f.namespace)

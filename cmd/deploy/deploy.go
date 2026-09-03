@@ -110,13 +110,14 @@ func runDeploy(f *deployFlags) error {
 	// ── Step 2: Resolve Rancher support matrix ───────────────────────────────
 	printStep(2, "Fetching Rancher support matrix")
 	var matrix *kdm.SupportMatrix
+	var kdmFlavor kdm.KDMFlavor
+	var usedFallbackKDM bool
 	if channel == rancher.ChannelHead {
-		var usedFallback bool
-		matrix, usedFallback, err = kdm.FetchSupportMatrixWithFallback(f.rancherVersion)
+		matrix, kdmFlavor, usedFallbackKDM, err = kdm.FetchSupportMatrixWithFallback(f.rancherVersion)
 		if err != nil {
 			return fmt.Errorf("support matrix lookup failed: %w", err)
 		}
-		if usedFallback {
+		if usedFallbackKDM {
 			printWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", f.rancherVersion)
 		}
 	} else {
@@ -184,7 +185,7 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Print plan ───────────────────────────────────────────────────────────
 	fmt.Println()
-	printPlan(f, mode, resolvedK8s, clusterVersion, certManagerVersion, chartRef, helmValues)
+	printPlan(f, mode, resolvedK8s, clusterVersion, certManagerVersion, kdmLine(matrix, kdmFlavor, usedFallbackKDM), chartRef, helmValues)
 
 	if f.dryRun {
 		fmt.Println()
@@ -264,7 +265,30 @@ func versionLine(requested, resolved, edition string) string {
 	return fmt.Sprintf("v%s (requested: %s, %s)", resolved, requested, edition)
 }
 
-func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer string, chart rancher.Chart, hv rancher.HelmValues) { //nolint:revive // 7 args are all distinct plan fields; a wrapper struct would add noise without clarity
+// kdmLine formats the "which Rancher version's KDM data are we trusting"
+// plan line — the data used to bridge the requested Rancher version and the
+// resolved Kubernetes version. Notes which branch flavor it came from
+// (release vs. dev — only shown when known, i.e. head-channel installs),
+// flags when the head channel's minor-1 fallback was used, and handles the
+// --force-skipped case (upgrade only, where matrix can be nil).
+func kdmLine(matrix *kdm.SupportMatrix, flavor kdm.KDMFlavor, usedFallback bool) string {
+	if matrix == nil {
+		return "unavailable (--force)"
+	}
+	var notes []string
+	if flavor != "" {
+		notes = append(notes, string(flavor))
+	}
+	if usedFallback {
+		notes = append(notes, "fallback — no KDM data published yet")
+	}
+	if len(notes) == 0 {
+		return fmt.Sprintf("v%s", matrix.RancherVersion)
+	}
+	return fmt.Sprintf("v%s (%s)", matrix.RancherVersion, strings.Join(notes, ", "))
+}
+
+func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer, kdmVer string, chart rancher.Chart, hv rancher.HelmValues) { //nolint:revive // 8 args are all distinct plan fields; a wrapper struct would add noise without clarity
 	edition := "Community"
 	if f.prime {
 		edition = "Prime"
@@ -272,6 +296,7 @@ func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer string, char
 	edition += " " + f.channel
 	fmt.Printf("%s━━ Deployment Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
 	fmt.Printf("  Rancher version  : %s\n", versionLine(f.rancherVersion, chart.Version, edition))
+	fmt.Printf("  KDM              : %s\n", kdmVer)
 	fmt.Printf("  Kubernetes       : %s\n", k8sVer)
 	fmt.Printf("  Cluster tool     : %s @ %s\n", mode, clusterVer)
 	fmt.Printf("  cert-manager     : %s\n", certMgrVer)

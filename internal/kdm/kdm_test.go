@@ -309,6 +309,38 @@ func TestExtractVersionsFiltersRancherVersion(t *testing.T) {
 	}
 }
 
+// ── KDM flavor ordering ────────────────────────────────────────────────────
+
+func TestKDMURL(t *testing.T) {
+	release := kdmURL(KDMFlavorRelease, "2.15")
+	wantRelease := "https://releases.rancher.com/kontainer-driver-metadata/release-v2.15/data.json"
+	if release != wantRelease {
+		t.Errorf("kdmURL(release, \"2.15\") = %q, want %q", release, wantRelease)
+	}
+
+	dev := kdmURL(KDMFlavorDev, "2.15")
+	wantDev := "https://raw.githubusercontent.com/rancher/kontainer-driver-metadata/refs/heads/dev-v2.15/data/data.json"
+	if dev != wantDev {
+		t.Errorf("kdmURL(dev, \"2.15\") = %q, want %q", dev, wantDev)
+	}
+}
+
+func TestFlavorPreferenceOrders(t *testing.T) {
+	// releaseFirst backs ordinary (non-head) installs, which are tied to an
+	// official release branch.
+	if len(releaseFirst) != 2 || releaseFirst[0] != KDMFlavorRelease || releaseFirst[1] != KDMFlavorDev {
+		t.Errorf("releaseFirst = %v, want [release dev]", releaseFirst)
+	}
+	// devFirst backs head-channel installs, which are inherently
+	// dev/bleeding-edge rather than tied to a release branch — used for both
+	// the target minor and the minor-1 fallback, per the design rationale
+	// that the fallback should match the flavor the target was resolved
+	// (or, for head, always is) against.
+	if len(devFirst) != 2 || devFirst[0] != KDMFlavorDev || devFirst[1] != KDMFlavorRelease {
+		t.Errorf("devFirst = %v, want [dev release]", devFirst)
+	}
+}
+
 // TestExtractVersions_NewMinorNoDedicatedRange is a frozen, hand-written
 // fixture — not fetched live — modeled on real KDM data observed on
 // 2026-09-03 for whatever Rancher minor was `main` at the time (2.16): it
