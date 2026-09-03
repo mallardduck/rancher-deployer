@@ -151,6 +151,55 @@ func FetchSupportMatrix(rancherVersion string) (*SupportMatrix, error) {
 	}, nil
 }
 
+// FetchSupportMatrixWithFallback tries rancherVersion's KDM data; if
+// unavailable, tries exactly one minor back once, since a brand-new minor
+// (e.g. a head build) often ships before its KDM branch/data exists
+// upstream. usedFallback reports whether the fallback data was used, so
+// callers can warn that k8s compatibility isn't guaranteed for it.
+func FetchSupportMatrixWithFallback(rancherVersion string) (matrix *SupportMatrix, usedFallback bool, err error) {
+	matrix, err = FetchSupportMatrix(rancherVersion)
+	if err == nil {
+		return matrix, false, nil
+	}
+	primaryErr := err
+
+	fallbackVersion, ok := previousMinorVersion(rancherVersion)
+	if !ok {
+		return nil, false, primaryErr
+	}
+
+	matrix, err = FetchSupportMatrix(fallbackVersion)
+	if err != nil {
+		return nil, false, fmt.Errorf(
+			"no KDM data for Rancher %s, and fallback to %s also failed:\n  primary:  %w\n  fallback: %w",
+			rancherVersion, fallbackVersion, primaryErr, err,
+		)
+	}
+	return matrix, true, nil
+}
+
+// previousMinorVersion computes "MAJOR.(MINOR-1).0" from a version string,
+// used as the KDM fallback target. Returns ok=false if the minor can't be
+// parsed or is already 0 (nothing to fall back to).
+func previousMinorVersion(v string) (string, bool) {
+	v = strings.TrimPrefix(v, "v")
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) < 2 {
+		return "", false
+	}
+	var major, minor int
+	if _, err := fmt.Sscanf(parts[0], "%d", &major); err != nil {
+		return "", false
+	}
+	if _, err := fmt.Sscanf(parts[1], "%d", &minor); err != nil {
+		return "", false
+	}
+	if minor == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("%d.%d.0", major, minor-1), true
+}
+
 func fetchKDM(rancherMinor string) (*kdmData, error) {
 	client := &http.Client{Timeout: httpTimeout}
 

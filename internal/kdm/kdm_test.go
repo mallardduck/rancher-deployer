@@ -309,6 +309,75 @@ func TestExtractVersionsFiltersRancherVersion(t *testing.T) {
 	}
 }
 
+// TestExtractVersions_NewMinorNoDedicatedRange is a frozen, hand-written
+// fixture — not fetched live — modeled on real KDM data observed on
+// 2026-09-03 for whatever Rancher minor was `main` at the time (2.16): it
+// had no stable release yet, and no dedicated appVersion range of its own
+// either — it was still covered by the existing "1.36.x" range, widened to
+// ">= 2.15.0-0 < 2.16.100-0" rather than a new range being added. This test
+// doesn't assert anything about current upstream state (it'll keep passing
+// unchanged once 2.16 GAs and `main` moves to 2.17); it just locks in that
+// extractVersions correctly matches a brand-new minor against a range that
+// was widened to include it rather than given a dedicated one — which is
+// why FetchSupportMatrix succeeds for a new minor via the ordinary
+// primary/GitHub-dev-branch fetch far more often than the minor-1 fallback
+// in FetchSupportMatrixWithFallback actually needs to trigger; that fallback
+// is for the rarer case where even the dev branch doesn't exist yet.
+func TestExtractVersions_NewMinorNoDedicatedRange(t *testing.T) {
+	d := &kdmData{
+		K3sInfo: distroInfo{
+			AppDefaults: []appDefaultIndex{
+				{
+					AppName: "rancher",
+					Defaults: []appDefaults{
+						{AppVersion: ">= 2.14.0-0 < 2.15.100-0", DefaultVersion: "1.35.x"},
+						{AppVersion: ">= 2.15.0-0 < 2.16.100-0", DefaultVersion: "1.36.x"},
+					},
+				},
+			},
+			Releases: []distroRelease{
+				{Version: "v1.35.5+k3s1"},
+				{Version: "v1.36.1+k3s1"},
+			},
+		},
+	}
+
+	versions := extractVersions(d, "2.16.0")
+	if len(versions) != 1 || versions[0] != "v1.36.1" {
+		t.Errorf("extractVersions(2.16.0) = %v, want [v1.36.1] (2.16 falls in the widened 2.15 range)", versions)
+	}
+}
+
+// ── previousMinorVersion ──────────────────────────────────────────────────────
+
+func TestPreviousMinorVersion(t *testing.T) {
+	cases := []struct {
+		input   string
+		want    string
+		wantOk  bool
+		comment string
+	}{
+		{"2.15", "2.14.0", true, "bare minor"},
+		{"2.15.0", "2.14.0", true, "full version"},
+		{"v2.15.2-abc123-head", "2.14.0", true, "head build version"},
+		{"2.0.0", "", false, "minor 0 has nothing to fall back to"},
+		{"bogus", "", false, "unparseable"},
+	}
+	for _, c := range cases {
+		got, ok := previousMinorVersion(c.input)
+		if ok != c.wantOk || got != c.want {
+			t.Errorf("previousMinorVersion(%q) = (%q, %v), want (%q, %v) [%s]",
+				c.input, got, ok, c.want, c.wantOk, c.comment)
+		}
+	}
+}
+
+// FetchSupportMatrixWithFallback itself isn't covered by a dedicated test:
+// like FetchSupportMatrix, it hits the hardcoded release URLs directly with
+// no way to inject a mock (see the skipped tests in rancher_http_test.go for
+// the same limitation elsewhere in this codebase). Its only real logic —
+// deciding what to fall back to — is previousMinorVersion, covered above.
+
 func TestFetchSupportMatrix_HTTPError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

@@ -1,9 +1,13 @@
 package rancher
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ── NormaliseChannel ──────────────────────────────────────────────────────────
@@ -200,6 +204,114 @@ func TestResolveChartHeadRequiresMinor(t *testing.T) {
 	_, err = ResolveChart(false, ChannelHead, "not-a-version")
 	if err == nil {
 		t.Error("expected error when head channel is given an unparseable version, got nil")
+	}
+}
+
+// ── Realistic mixed-index fixtures ───────────────────────────────────────────
+//
+// primeLatestFixture is a frozen, hand-written snapshot — not fetched live —
+// shaped after the real Prime "latest" repo index
+// (charts.optimus.rancher.io/server-charts/latest) as observed on 2026-09-03.
+// It will keep passing unchanged regardless of what Rancher ships later
+// (e.g. once 2.16 GAs and `main` moves on to 2.17): it isn't asserting
+// anything about *current* upstream state, only that the resolver handles
+// two minor shapes correctly:
+//   - "2.15": an established minor with GA + RC + head entries all present
+//     in the same index (mirrors how Prime's "latest" repo mixes them).
+//   - "2.16": a brand-new minor with head builds only and no GA/RC at all —
+//     the shape any not-yet-released minor has, modeled here on 2.16 because
+//     that's what `main` looked like at the time this was written.
+func primeLatestFixture() []helmIndexEntry {
+	return []helmIndexEntry{
+		{Version: "2.15.0", Created: "2026-07-01T00:00:00Z"},
+		{Version: "2.15.0-rc1", Created: "2026-06-20T00:00:00Z"},
+		{Version: "2.15.1", Created: "2026-08-01T00:00:00Z"},
+		{Version: "2.15.1-rc2", Created: "2026-07-25T00:00:00Z"},
+		{Version: "2.15.2-fbf2130-head", Created: "2026-09-01T10:00:00Z"},
+		{Version: "2.15.2-a90f264-head", Created: "2026-09-02T21:02:39Z"},
+		// No GA/RC entries at all for this minor — only head builds.
+		{Version: "2.16.0-de47bc4-head", Created: "2026-09-02T18:00:00Z"},
+		{Version: "2.16.0-ff28ae6aea8dcb820bcc2ff8bfd1bc45d4e2ee65-head", Created: "2026-09-03T09:26:05Z"},
+	}
+}
+
+func TestResolveMinorEntry_IgnoresHeadBuildsInSharedIndex(t *testing.T) {
+	// A bare-minor "latest" resolution for 2.15 must land on the actual GA
+	// (2.15.1), never on a 2.15.2-*-head entry — even though a head build's
+	// patch number sorts numerically above the current GA.
+	got, err := resolveMinorEntry(primeLatestFixture(), "2.15")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Version != "2.15.1" {
+		t.Errorf("resolveMinorEntry(\"2.15\") = %q, want %q (must not pick a head build)", got.Version, "2.15.1")
+	}
+}
+
+func TestResolveMinorEntry_MinorWithOnlyHeadEntries(t *testing.T) {
+	// A minor with no GA/RC in the index — only head builds. resolveMinorEntry
+	// (used by non-head channels) must fail clearly rather than accidentally
+	// falling through to a head entry.
+	_, err := resolveMinorEntry(primeLatestFixture(), "2.16")
+	if err == nil {
+		t.Error("expected error resolving a non-head version for a minor with only head entries, got nil")
+	}
+}
+
+func TestResolveHeadEntry_MinorWithOnlyHeadEntries(t *testing.T) {
+	// The head channel is exactly the path that *should* work when a minor
+	// has no stable release yet: pick the newest head build by created
+	// timestamp.
+	got, err := resolveHeadEntry(primeLatestFixture(), "2.16")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "2.16.0-ff28ae6aea8dcb820bcc2ff8bfd1bc45d4e2ee65-head"
+	if got.Version != want {
+		t.Errorf("resolveHeadEntry(\"2.16\") = %q, want %q", got.Version, want)
+	}
+}
+
+func TestResolveHeadEntry_EstablishedMinorPicksNewestHeadNotGA(t *testing.T) {
+	// For a minor that already has a GA (2.15), the head channel must still
+	// resolve to the newest *head* build, not the GA/RC entries.
+	got, err := resolveHeadEntry(primeLatestFixture(), "2.15")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "2.15.2-a90f264-head"
+	if got.Version != want {
+		t.Errorf("resolveHeadEntry(\"2.15\") = %q, want %q", got.Version, want)
+	}
+}
+
+func TestFetchLatestVersion_ExcludesHeadBuilds(t *testing.T) {
+	// FetchLatestVersion backs the no-version-given auto-resolve path
+	// (e.g. `resolve --prime`, default channel latest). Even though 2.16
+	// head builds are numerically "newer" than the 2.15.x GA/RC entries in
+	// the shared index, a non-head channel must never resolve to one.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml")
+		_ = yaml.NewEncoder(w).Encode(struct {
+			Entries map[string][]helmIndexEntry `yaml:"entries"`
+		}{
+			Entries: map[string][]helmIndexEntry{
+				chartName: primeLatestFixture(),
+			},
+		})
+	}))
+	defer server.Close()
+
+	orig := repoURLs[true][ChannelLatest]
+	repoURLs[true][ChannelLatest] = server.URL
+	defer func() { repoURLs[true][ChannelLatest] = orig }()
+
+	got, err := FetchLatestVersion(true, ChannelLatest)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "2.15.1" {
+		t.Errorf("FetchLatestVersion() = %q, want %q (must not pick a 2.16 head build)", got, "2.15.1")
 	}
 }
 

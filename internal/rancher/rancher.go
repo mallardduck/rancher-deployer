@@ -181,6 +181,11 @@ func fetchIndex(repoURL string) ([]helmIndexEntry, error) {
 
 // FetchLatestVersion queries the Helm repository for the given prime/channel
 // combination and returns the latest available Rancher version (without a leading "v").
+//
+// Head builds are excluded when channel != ChannelHead: Prime's "latest"
+// repo mixes GA, RC, and head entries in one index, and a head build's patch
+// number can sort above the current GA (see resolveMinorEntry), so a plain
+// "latest" resolution must not silently land on one.
 func FetchLatestVersion(prime bool, channel string) (string, error) {
 	repoURL, ok := repoURLs[prime][channel]
 	if !ok {
@@ -190,6 +195,19 @@ func FetchLatestVersion(prime bool, channel string) (string, error) {
 	entries, err := fetchIndex(repoURL)
 	if err != nil {
 		return "", err
+	}
+
+	if channel != ChannelHead {
+		filtered := entries[:0]
+		for _, e := range entries {
+			if !strings.HasSuffix(e.Version, "-head") {
+				filtered = append(filtered, e)
+			}
+		}
+		entries = filtered
+		if len(entries) == 0 {
+			return "", fmt.Errorf("no non-head chart entries in Helm index from %s/index.yaml", repoURL)
+		}
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
@@ -222,11 +240,16 @@ func versionMinor(v string) string {
 }
 
 // resolveMinorEntry picks the newest entry in entries whose version falls in
-// the given minor, using ordinary semver-ish comparison.
+// the given minor, using ordinary semver-ish comparison. Head builds are
+// excluded even if present in the index (Prime's "latest" repo mixes GA, RC,
+// and head entries together, and a head build's patch number can sort above
+// the current GA — e.g. "2.15.2-<hash>-head" next to a "2.15.1" GA — so this
+// must not be left to comparison order). Head builds are only reachable via
+// the dedicated head channel and resolveHeadEntry.
 func resolveMinorEntry(entries []helmIndexEntry, minor string) (helmIndexEntry, error) {
 	var candidates []helmIndexEntry
 	for _, e := range entries {
-		if versionMinor(e.Version) == minor {
+		if versionMinor(e.Version) == minor && !strings.HasSuffix(e.Version, "-head") {
 			candidates = append(candidates, e)
 		}
 	}
