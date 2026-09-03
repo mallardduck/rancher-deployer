@@ -31,6 +31,7 @@ type deployFlags struct {
 	clusterName       string // k3d only
 	bootstrapPassword string
 	helmSet           []string
+	failurePolicy     string
 	prime             bool
 	dryRun            bool
 	yes               bool // skip confirmation prompt
@@ -78,6 +79,7 @@ func newDeployCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.clusterName, "cluster-name", "rancher-local", "k3d cluster name (k3d mode only)")
 	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "Skip confirmation prompt (for CI/non-interactive use)")
 	cmd.Flags().StringVar(&f.bootstrapPassword, "bootstrap-password", "letsmein", "Initial admin password for Rancher")
+	cmd.Flags().StringVar(&f.failurePolicy, "failure-policy", rancher.FailurePolicyAbort, "What to do if the install fails: abort (leave it for inspection) or reinstall (roll back/clean up automatically)")
 
 	return cmd
 }
@@ -87,6 +89,11 @@ func runDeploy(f *deployFlags) error {
 	f.rancherVersion = strings.TrimPrefix(f.rancherVersion, "v")
 
 	channel, err := rancher.NormaliseChannel(f.channel)
+	if err != nil {
+		return err
+	}
+
+	failurePolicy, err := rancher.ParseFailurePolicy(f.failurePolicy)
 	if err != nil {
 		return err
 	}
@@ -196,6 +203,7 @@ func runDeploy(f *deployFlags) error {
 	if err != nil {
 		return err
 	}
+	helmValues.FailurePolicy = failurePolicy
 	if len(helmValues.SetFlags) > 0 {
 		for _, s := range helmValues.SetFlags {
 			printInfo("  --set %s", s)
@@ -356,6 +364,7 @@ func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer, kdmVer stri
 	fmt.Printf("  Namespace        : %s\n", f.namespace)
 	fmt.Printf("  Hostname         : %s\n", hv.Hostname)
 	fmt.Printf("  Bootstrap PW     : %s\n", f.bootstrapPassword)
+	fmt.Printf("  Failure policy   : %s\n", hv.FailurePolicy)
 	if f.dryRun {
 		fmt.Printf("  Mode             : DRY RUN\n")
 	}

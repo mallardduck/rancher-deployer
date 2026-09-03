@@ -18,6 +18,7 @@ type upgradeFlags struct {
 	commit         string // head channel only — pin to a specific head build
 	valuesFile     string
 	helmSet        []string
+	failurePolicy  string
 	prime          bool
 	dryRun         bool
 	yes            bool
@@ -56,6 +57,7 @@ func newUpgradeCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print resolved plan without executing")
 	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "Skip confirmation prompt")
 	cmd.Flags().BoolVar(&f.force, "force", false, "Skip upgrade-path and k8s-compatibility checks (useful for pre-release testing)")
+	cmd.Flags().StringVar(&f.failurePolicy, "failure-policy", rancher.FailurePolicyAbort, "What to do if the upgrade fails: abort (leave it for inspection) or reinstall (roll back automatically)")
 
 	return cmd
 }
@@ -64,6 +66,11 @@ func runUpgrade(f *upgradeFlags) error {
 	f.rancherVersion = strings.TrimPrefix(f.rancherVersion, "v")
 
 	channel, err := rancher.NormaliseChannel(f.channel)
+	if err != nil {
+		return err
+	}
+
+	failurePolicy, err := rancher.ParseFailurePolicy(f.failurePolicy)
 	if err != nil {
 		return err
 	}
@@ -168,8 +175,9 @@ func runUpgrade(f *upgradeFlags) error {
 	// ── Step 6: Build Helm values (no bootstrapPassword on upgrade) ───────────
 	printStep(6, "Building Helm values")
 	helmValues := rancher.HelmValues{
-		ValuesFile: f.valuesFile,
-		SetFlags:   f.helmSet,
+		ValuesFile:    f.valuesFile,
+		SetFlags:      f.helmSet,
+		FailurePolicy: failurePolicy,
 	}
 	if f.valuesFile != "" {
 		printInfo("  --values %s", f.valuesFile)
@@ -232,6 +240,7 @@ func printUpgradePlan(f *upgradeFlags, currentVersion, clusterK8s, kdmVer string
 	fmt.Printf("  Cluster k8s      : %s\n", clusterK8s)
 	fmt.Printf("  Helm chart       : %s\n", chart.String())
 	fmt.Printf("  Namespace        : %s\n", f.namespace)
+	fmt.Printf("  Failure policy   : %s\n", f.failurePolicy)
 	if f.force {
 		fmt.Printf("  Checks           : FORCED (path + k8s compat skipped)\n")
 	}
