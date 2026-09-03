@@ -559,8 +559,8 @@ func ParseFailurePolicy(policy string) (string, error) {
 type HelmValues struct {
 	ValuesFile    string   // --values <file>
 	Hostname      string   // resolved hostname
-	SetFlags      []string // --set key=value entries
 	FailurePolicy string   // "" is treated as FailurePolicyAbort by consumers
+	SetFlags      []string // --set key=value entries
 }
 
 // BuildHelmValues validates the values file (if given) and assembles the

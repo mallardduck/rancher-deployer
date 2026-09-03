@@ -17,8 +17,8 @@ type upgradeFlags struct {
 	channel        string
 	commit         string // head channel only — pin to a specific head build
 	valuesFile     string
-	helmSet        []string
 	failurePolicy  string
+	helmSet        []string
 	prime          bool
 	dryRun         bool
 	yes            bool

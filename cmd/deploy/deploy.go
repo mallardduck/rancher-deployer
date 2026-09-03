@@ -30,8 +30,8 @@ type deployFlags struct {
 	valuesFile        string
 	clusterName       string // k3d only
 	bootstrapPassword string
-	helmSet           []string
 	failurePolicy     string
+	helmSet           []string
 	prime             bool
 	dryRun            bool
 	yes               bool // skip confirmation prompt
