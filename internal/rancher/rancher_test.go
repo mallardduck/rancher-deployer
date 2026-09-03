@@ -45,6 +45,164 @@ func TestNormaliseChannel(t *testing.T) {
 	}
 }
 
+func TestNormaliseChannelHead(t *testing.T) {
+	got, err := NormaliseChannel("HEAD")
+	if err != nil {
+		t.Fatalf("NormaliseChannel(\"HEAD\") unexpected error: %v", err)
+	}
+	if got != ChannelHead {
+		t.Errorf("NormaliseChannel(\"HEAD\") = %q, want %q", got, ChannelHead)
+	}
+}
+
+// ── headRepoURL / headRepoName ─────────────────────────────────────────────
+
+func TestHeadRepoURL(t *testing.T) {
+	t.Run("community is per-minor", func(t *testing.T) {
+		got := headRepoURL(false, "2.15")
+		want := "https://charts.optimus.rancher.io/server-charts/release-2.15"
+		if got != want {
+			t.Errorf("headRepoURL(false, \"2.15\") = %q, want %q", got, want)
+		}
+	})
+	t.Run("prime uses the configured head repo regardless of minor", func(t *testing.T) {
+		got215 := headRepoURL(true, "2.15")
+		got216 := headRepoURL(true, "2.16")
+		if got215 != got216 {
+			t.Errorf("headRepoURL(true, ...) should not vary by minor, got %q vs %q", got215, got216)
+		}
+		if got215 != repoURLs[true][ChannelHead] {
+			t.Errorf("headRepoURL(true, ...) = %q, want repoURLs[true][ChannelHead] = %q", got215, repoURLs[true][ChannelHead])
+		}
+	})
+}
+
+func TestHeadRepoName(t *testing.T) {
+	if got := headRepoName(false, "2.15"); got != "rancher-head-2.15" {
+		t.Errorf("headRepoName(false, \"2.15\") = %q, want %q", got, "rancher-head-2.15")
+	}
+	if got := headRepoName(true, "2.15"); got != repoNames[true][ChannelHead] {
+		t.Errorf("headRepoName(true, \"2.15\") = %q, want %q", got, repoNames[true][ChannelHead])
+	}
+}
+
+// ── versionMinor ──────────────────────────────────────────────────────────────
+
+func TestVersionMinor(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"2.8.5", "2.8"},
+		{"v2.9.0-rc1", "2.9"},
+		{"2.15-9f0d0301586ef2c690062d3a42bb3a91edfd3e12-head", "2.15"},
+		{"2.15.2-fbf2130-head", "2.15"},
+		{"2.15", "2.15"},
+		{"bogus", ""},
+		{"", ""},
+	}
+	for _, c := range cases {
+		got := versionMinor(c.input)
+		if got != c.want {
+			t.Errorf("versionMinor(%q) = %q, want %q", c.input, got, c.want)
+		}
+	}
+}
+
+// ── resolveMinorEntry / resolveHeadEntry ─────────────────────────────────────
+
+func TestResolveMinorEntry(t *testing.T) {
+	entries := []helmIndexEntry{
+		{Version: "2.14.3"},
+		{Version: "2.14.2"},
+		{Version: "2.15.0"},
+		{Version: "2.14.3-rc1"},
+	}
+
+	t.Run("picks newest in requested minor", func(t *testing.T) {
+		got, err := resolveMinorEntry(entries, "2.14")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.Version != "2.14.3" {
+			t.Errorf("resolveMinorEntry() = %q, want %q", got.Version, "2.14.3")
+		}
+	})
+
+	t.Run("errors for unknown minor", func(t *testing.T) {
+		_, err := resolveMinorEntry(entries, "9.99")
+		if err == nil {
+			t.Error("expected error for unknown minor, got nil")
+		}
+	})
+}
+
+func TestResolveHeadEntry(t *testing.T) {
+	entries := []helmIndexEntry{
+		{Version: "2.15.2-fbf2130-head", Created: "2026-09-01T10:00:00Z"},
+		{Version: "2.15.2-a90f264-head", Created: "2026-09-02T21:02:39Z"}, // newest
+		{Version: "2.15.1-rc2", Created: "2026-08-20T00:00:00Z"},          // not a head build
+		{Version: "2.16.0-de47bc4-head", Created: "2026-09-03T00:00:00Z"}, // different minor
+	}
+
+	t.Run("picks newest head build by created timestamp within minor", func(t *testing.T) {
+		got, err := resolveHeadEntry(entries, "2.15")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.Version != "2.15.2-a90f264-head" {
+			t.Errorf("resolveHeadEntry() = %q, want %q", got.Version, "2.15.2-a90f264-head")
+		}
+	})
+
+	t.Run("errors when no head build exists for the minor", func(t *testing.T) {
+		_, err := resolveHeadEntry(entries, "9.99")
+		if err == nil {
+			t.Error("expected error for minor with no head build, got nil")
+		}
+	})
+
+	t.Run("ignores non-head entries in the same minor", func(t *testing.T) {
+		single := []helmIndexEntry{
+			{Version: "2.15.1-rc2", Created: "2026-08-20T00:00:00Z"},
+		}
+		_, err := resolveHeadEntry(single, "2.15")
+		if err == nil {
+			t.Error("expected error since no entry has a -head suffix, got nil")
+		}
+	})
+}
+
+// ── ResolveChart ──────────────────────────────────────────────────────────────
+
+func TestResolveChartExactVersionPassthrough(t *testing.T) {
+	got, err := ResolveChart(false, ChannelStable, "2.8.5")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Version != "2.8.5" {
+		t.Errorf("Version = %q, want %q", got.Version, "2.8.5")
+	}
+	if got.RepoURL != repoURLs[false][ChannelStable] {
+		t.Errorf("RepoURL = %q, want %q", got.RepoURL, repoURLs[false][ChannelStable])
+	}
+	if got.IsPrerelease {
+		t.Error("IsPrerelease = true, want false for a plain patch version")
+	}
+}
+
+func TestResolveChartHeadRequiresMinor(t *testing.T) {
+	_, err := ResolveChart(false, ChannelHead, "")
+	if err == nil {
+		t.Error("expected error when head channel is given no version, got nil")
+	}
+
+	_, err = ResolveChart(false, ChannelHead, "not-a-version")
+	if err == nil {
+		t.Error("expected error when head channel is given an unparseable version, got nil")
+	}
+}
+
 // ── ChartRef ──────────────────────────────────────────────────────────────────
 
 func TestChartRef(t *testing.T) {

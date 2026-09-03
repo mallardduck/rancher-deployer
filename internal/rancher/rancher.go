@@ -10,12 +10,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/runner"
 )
 
@@ -26,11 +28,16 @@ const (
 	ChannelStable = "stable" // GA releases only
 	ChannelLatest = "latest" // RC + latest GA  (alias: "rc")
 	ChannelAlpha  = "alpha"  // Alpha builds
+	ChannelHead   = "head"   // Continuously-published head builds for a minor branch
 
 	chartName = "rancher"
 )
 
-// chart repos indexed by [prime][channel]
+// chart repos indexed by [prime][channel].
+//
+// Community head builds are intentionally absent here: they're served from a
+// dedicated per-minor path (see headRepoURL) rather than a single fixed URL,
+// so they can't be represented as a static map entry.
 var repoURLs = map[bool]map[string]string{
 	false: {
 		ChannelStable: "https://releases.rancher.com/server-charts/stable",
@@ -41,6 +48,11 @@ var repoURLs = map[bool]map[string]string{
 		ChannelStable: "https://charts.rancher.com/server-charts/prime",
 		ChannelLatest: "https://charts.optimus.rancher.io/server-charts/latest",
 		ChannelAlpha:  "https://charts.optimus.rancher.io/server-charts/alpha",
+		// Prime head builds are already mixed into the "latest" repo today
+		// (GA + RC + head, filtered by resolveHeadEntry). Kept as its own
+		// entry — not aliased to ChannelLatest — so it can be pointed at a
+		// dedicated repo independently if Prime ever splits one out.
+		ChannelHead: "https://charts.optimus.rancher.io/server-charts/latest",
 	},
 }
 
@@ -54,6 +66,7 @@ var repoNames = map[bool]map[string]string{
 		ChannelStable: "rancher-prime",
 		ChannelLatest: "rancher-prime-latest",
 		ChannelAlpha:  "rancher-prime-alpha",
+		ChannelHead:   "rancher-prime-head",
 	},
 }
 
@@ -80,9 +93,33 @@ func NormaliseChannel(channel string) (string, error) {
 		return ChannelLatest, nil
 	case ChannelAlpha:
 		return ChannelAlpha, nil
+	case ChannelHead:
+		return ChannelHead, nil
 	default:
-		return "", fmt.Errorf("unknown channel %q: must be stable, latest, rc, or alpha", channel)
+		return "", fmt.Errorf("unknown channel %q: must be stable, latest, rc, alpha, or head", channel)
 	}
+}
+
+// headRepoURL returns the Helm repo URL that serves head builds for the
+// given edition and minor version (e.g. "2.15").
+//
+// Community head builds live in a dedicated per-minor repo. Prime head
+// builds are not on a separate path at all today — they're already mixed
+// into the Prime repo configured under ChannelHead (currently the same repo
+// as "latest": GA + RC + head), filtered down by resolveHeadEntry.
+func headRepoURL(prime bool, minor string) string {
+	if prime {
+		return repoURLs[true][ChannelHead]
+	}
+	return fmt.Sprintf("https://charts.optimus.rancher.io/server-charts/release-%s", minor)
+}
+
+// headRepoName returns the Helm repo alias to register for head builds.
+func headRepoName(prime bool, minor string) string {
+	if prime {
+		return repoNames[true][ChannelHead]
+	}
+	return fmt.Sprintf("rancher-head-%s", minor)
 }
 
 // ChartRef returns the appropriate Chart for the given edition and channel.
@@ -96,12 +133,50 @@ func ChartRef(prime, prerelease bool, channel, rancherVersion string) Chart {
 	}
 }
 
+// helmIndexEntry is the subset of a Helm repository index entry needed to
+// resolve chart versions, including by recency for head builds (whose
+// version strings carry a git hash rather than a sortable sequence).
+type helmIndexEntry struct {
+	Version string `yaml:"version"`
+	Created string `yaml:"created"`
+}
+
 // helmIndex is the minimal subset of a Helm repository index file needed to
 // find the latest chart version.
 type helmIndex struct {
-	Entries map[string][]struct {
-		Version string `yaml:"version"`
-	} `yaml:"entries"`
+	Entries map[string][]helmIndexEntry `yaml:"entries"`
+}
+
+// fetchIndex downloads and parses the Helm repository index at repoURL,
+// returning the "rancher" chart's entries.
+func fetchIndex(repoURL string) ([]helmIndexEntry, error) {
+	indexURL := repoURL + "/index.yaml"
+	client := &http.Client{Timeout: certManagerTimeout}
+	resp, err := client.Get(indexURL) //nolint:gosec // URL built from internal map of known Helm repo constants
+	if err != nil {
+		return nil, fmt.Errorf("could not fetch Helm index from %s: %w", indexURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d fetching Helm index from %s", resp.StatusCode, indexURL)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("could not read Helm index: %w", err)
+	}
+
+	var index helmIndex
+	if err := yaml.Unmarshal(body, &index); err != nil {
+		return nil, fmt.Errorf("could not parse Helm index: %w", err)
+	}
+
+	entries, ok := index.Entries[chartName]
+	if !ok || len(entries) == 0 {
+		return nil, fmt.Errorf("no %q chart entries in Helm index from %s", chartName, indexURL)
+	}
+	return entries, nil
 }
 
 // FetchLatestVersion queries the Helm repository for the given prime/channel
@@ -112,31 +187,9 @@ func FetchLatestVersion(prime bool, channel string) (string, error) {
 		return "", fmt.Errorf("no repository configured for prime=%v channel=%q", prime, channel)
 	}
 
-	indexURL := repoURL + "/index.yaml"
-	client := &http.Client{Timeout: certManagerTimeout}
-	resp, err := client.Get(indexURL) //nolint:gosec // URL built from internal map of known Helm repo constants
+	entries, err := fetchIndex(repoURL)
 	if err != nil {
-		return "", fmt.Errorf("could not fetch Helm index from %s: %w", indexURL, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP %d fetching Helm index from %s", resp.StatusCode, indexURL)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("could not read Helm index: %w", err)
-	}
-
-	var index helmIndex
-	if err := yaml.Unmarshal(body, &index); err != nil {
-		return "", fmt.Errorf("could not parse Helm index: %w", err)
-	}
-
-	entries, ok := index.Entries[chartName]
-	if !ok || len(entries) == 0 {
-		return "", fmt.Errorf("no %q chart entries in Helm index from %s", chartName, indexURL)
+		return "", err
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
@@ -144,6 +197,147 @@ func FetchLatestVersion(prime bool, channel string) (string, error) {
 	})
 
 	return strings.TrimPrefix(entries[0].Version, "v"), nil
+}
+
+// minorOnlyRe matches a bare "MAJOR.MINOR" version input (no patch, no
+// pre-release suffix) — the signal that the caller wants auto-resolution
+// within that minor rather than an exact pin.
+var minorOnlyRe = regexp.MustCompile(`^\d+\.\d+$`)
+
+// minorPrefixRe extracts the "MAJOR.MINOR" prefix from a version string,
+// tolerating trailing content that doesn't parse as a plain patch number —
+// e.g. head build versions like "2.15-9f0d030...-head" or
+// "2.15.2-fbf2130-head".
+var minorPrefixRe = regexp.MustCompile(`^(\d+\.\d+)`)
+
+// versionMinor extracts the "MAJOR.MINOR" prefix from a version string.
+// Returns "" if the string doesn't start with a recognisable major.minor.
+func versionMinor(v string) string {
+	v = strings.TrimPrefix(v, "v")
+	m := minorPrefixRe.FindStringSubmatch(v)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+// resolveMinorEntry picks the newest entry in entries whose version falls in
+// the given minor, using ordinary semver-ish comparison.
+func resolveMinorEntry(entries []helmIndexEntry, minor string) (helmIndexEntry, error) {
+	var candidates []helmIndexEntry
+	for _, e := range entries {
+		if versionMinor(e.Version) == minor {
+			candidates = append(candidates, e)
+		}
+	}
+	if len(candidates) == 0 {
+		return helmIndexEntry{}, fmt.Errorf("no chart entries found for Rancher %s in this repository", minor)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return compareRancherVersions(candidates[i].Version, candidates[j].Version) > 0
+	})
+	return candidates[0], nil
+}
+
+// resolveHeadEntry picks the newest head build for the given minor. Head
+// build version strings carry a git hash rather than a sortable sequence
+// (e.g. "2.16.0-b03c4de-head" vs "2.16.0-de47bc4-head"), so recency is
+// determined by each entry's "created" timestamp instead of the version
+// string itself.
+func resolveHeadEntry(entries []helmIndexEntry, minor string) (helmIndexEntry, error) {
+	var candidates []helmIndexEntry
+	for _, e := range entries {
+		if versionMinor(e.Version) == minor && strings.HasSuffix(e.Version, "-head") {
+			candidates = append(candidates, e)
+		}
+	}
+	if len(candidates) == 0 {
+		return helmIndexEntry{}, fmt.Errorf("no head build found for Rancher %s minor in this repository", minor)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		ti, _ := time.Parse(time.RFC3339Nano, candidates[i].Created)
+		tj, _ := time.Parse(time.RFC3339Nano, candidates[j].Created)
+		return ti.After(tj)
+	})
+	return candidates[0], nil
+}
+
+// ResolveChart determines the full Chart (repo, name, version, prerelease)
+// for a given edition/channel/version input.
+//
+// versionInput may be:
+//   - empty — resolve the absolute newest version in the channel (not valid
+//     for the head channel, which is always minor-scoped).
+//   - a bare minor, e.g. "2.15" — resolve the newest patch in that minor
+//     (stable/latest/alpha), or the newest head build for that minor (head).
+//   - an exact version, e.g. "2.8.5" or "2.9.0-rc1" — used as-is with no
+//     network call (not valid for head, whose build hashes aren't
+//     user-guessable).
+func ResolveChart(prime bool, channel, versionInput string) (Chart, error) {
+	versionInput = strings.TrimPrefix(versionInput, "v")
+
+	if channel == ChannelHead {
+		minor := versionMinor(versionInput)
+		if minor == "" {
+			return Chart{}, fmt.Errorf(
+				"head channel requires a Rancher minor version, e.g. --rancher-version 2.15 (got %q)",
+				versionInput,
+			)
+		}
+		repoURL := headRepoURL(prime, minor)
+		entries, err := fetchIndex(repoURL)
+		if err != nil {
+			return Chart{}, err
+		}
+		entry, err := resolveHeadEntry(entries, minor)
+		if err != nil {
+			return Chart{}, err
+		}
+		version := strings.TrimPrefix(entry.Version, "v")
+		return Chart{
+			RepoName:     headRepoName(prime, minor),
+			RepoURL:      repoURL,
+			ChartName:    chartName,
+			Version:      version,
+			IsPrerelease: true,
+		}, nil
+	}
+
+	repoURL, ok := repoURLs[prime][channel]
+	if !ok {
+		return Chart{}, fmt.Errorf("no repository configured for prime=%v channel=%q", prime, channel)
+	}
+	repoName := repoNames[prime][channel]
+
+	var version string
+	switch {
+	case versionInput == "":
+		latest, err := FetchLatestVersion(prime, channel)
+		if err != nil {
+			return Chart{}, err
+		}
+		version = latest
+	case minorOnlyRe.MatchString(versionInput):
+		entries, err := fetchIndex(repoURL)
+		if err != nil {
+			return Chart{}, err
+		}
+		entry, err := resolveMinorEntry(entries, versionInput)
+		if err != nil {
+			return Chart{}, err
+		}
+		version = strings.TrimPrefix(entry.Version, "v")
+	default:
+		version = versionInput
+	}
+
+	return Chart{
+		RepoName:     repoName,
+		RepoURL:      repoURL,
+		ChartName:    chartName,
+		Version:      version,
+		IsPrerelease: k8sresolver.IsPrerelease(version),
+	}, nil
 }
 
 // compareRancherVersions compares two Rancher version strings numerically.
