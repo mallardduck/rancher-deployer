@@ -28,6 +28,32 @@ rancher-deployer deploy --rancher-version 2.8.5
 
 ## Installation
 
+### From a GitHub release (recommended)
+
+Prebuilt binaries for `linux`/`darwin` on `amd64`/`arm64` are published on the
+[Releases page](https://github.com/mallardduck/rancher-deployer/releases), each with a
+`checksums.txt` for verification.
+
+```bash
+# Set these for your platform, e.g. os=darwin arch=arm64
+os=linux
+arch=amd64
+version=$(curl -fsSL https://api.github.com/repos/mallardduck/rancher-deployer/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4)
+
+curl -fsSL -o rancher-deployer.tar.gz \
+  "https://github.com/mallardduck/rancher-deployer/releases/download/${version}/rancher-deployer_${version#v}_${os}_${arch}.tar.gz"
+tar -xzf rancher-deployer.tar.gz rancher-deployer
+sudo install -m 0755 rancher-deployer /usr/local/bin/rancher-deployer
+```
+
+Once installed, keep it up to date with the built-in updater, which checks the same
+GitHub releases and verifies the downloaded binary against the published checksums:
+
+```bash
+rancher-deployer self-update          # check, prompt, and apply if available
+rancher-deployer self-update --check  # just check
+```
+
 ### From source (requires Go 1.25+)
 
 ```bash
@@ -130,6 +156,22 @@ rancher-deployer teardown [flags]
 1. Uninstall the Rancher Helm release
 2. Remove cert-manager
 3. Delete the entire k3s/k3d cluster
+
+### `self-update` — update the binary itself
+
+```
+rancher-deployer self-update [flags]
+```
+
+| Flag        | Default | Description |
+|-------------|---------|-------------|
+| `--check`   | `false` | Only check for an update; don't prompt or apply |
+| `--yes, -y` | `false` | Skip confirmation prompt |
+
+Checks GitHub for a newer release of `rancher-deployer` and, on confirmation, replaces
+the running binary with it. Installs managed by a package manager (Homebrew, apt,
+Scoop) or otherwise not writable by the current user are detected and skipped, with
+guidance on how to update through that channel instead.
 
 ---
 
