@@ -14,13 +14,40 @@ import (
 )
 
 const (
-	// Primary KDM source: Rancher's releases CDN
+	// Release KDM source: Rancher's releases CDN, tied to an official release branch.
 	kdmURLTemplate = "https://releases.rancher.com/kontainer-driver-metadata/release-v%s/data.json"
-	// Fallback: GitHub raw
+	// Dev KDM source: GitHub raw, tied to the in-development branch for a minor.
 	kdmFallbackTemplate = "https://raw.githubusercontent.com/rancher/kontainer-driver-metadata/refs/heads/dev-v%s/data/data.json"
 
 	httpTimeout = 30 * time.Second
 )
+
+// KDMFlavor identifies which KDM branch a support matrix was actually built
+// from: an official release branch, or the in-development branch for a
+// minor that doesn't have one yet.
+type KDMFlavor string
+
+const (
+	KDMFlavorRelease KDMFlavor = "release"
+	KDMFlavorDev     KDMFlavor = "dev"
+)
+
+// releaseFirst and devFirst are the two flavor-preference orders callers
+// choose between: releaseFirst for ordinary (non-head) installs, which are
+// tied to an official release; devFirst for head-channel installs, which
+// are inherently dev/bleeding-edge rather than tied to a release branch.
+var (
+	releaseFirst = []KDMFlavor{KDMFlavorRelease, KDMFlavorDev}
+	devFirst     = []KDMFlavor{KDMFlavorDev, KDMFlavorRelease}
+)
+
+// kdmURL returns the KDM data.json URL for the given flavor and minor.
+func kdmURL(flavor KDMFlavor, minor string) string {
+	if flavor == KDMFlavorDev {
+		return fmt.Sprintf(kdmFallbackTemplate, minor)
+	}
+	return fmt.Sprintf(kdmURLTemplate, minor)
+}
 
 // SupportMatrix holds the k8s versions supported by a specific Rancher release.
 type SupportMatrix struct {
@@ -127,18 +154,67 @@ type distroRelease struct {
 	Version string `json:"version"`
 }
 
-// FetchSupportMatrix downloads and parses the KDM for the given Rancher version.
+// FetchSupportMatrix downloads and parses the KDM for the given Rancher
+// version, preferring the official release branch and falling back to the
+// dev branch if that minor has no release branch yet.
 func FetchSupportMatrix(rancherVersion string) (*SupportMatrix, error) {
+	matrix, _, err := fetchSupportMatrixFlavored(rancherVersion, releaseFirst)
+	return matrix, err
+}
+
+// SupportMatrixResult is what FetchSupportMatrixWithFallback resolves for a
+// head-channel install: the support matrix itself, which KDM branch it
+// actually came from, and whether the previous minor's data had to be used.
+type SupportMatrixResult struct {
+	Matrix            *SupportMatrix
+	Flavor            KDMFlavor
+	UsedFallbackMinor bool
+}
+
+// FetchSupportMatrixWithFallback resolves KDM data for a head-channel
+// install. Head builds are inherently dev/bleeding-edge rather than tied to
+// an official release, so the dev branch is checked before the release
+// branch — for the target minor, and (if neither has data for it yet) for
+// the previous minor too, tried exactly once. Result.Flavor reports which
+// branch the returned data actually came from, and
+// Result.UsedFallbackMinor reports whether the previous minor's data had to
+// be used, so callers can warn that k8s compatibility isn't guaranteed for
+// it.
+func FetchSupportMatrixWithFallback(rancherVersion string) (*SupportMatrixResult, error) {
+	matrix, flavor, err := fetchSupportMatrixFlavored(rancherVersion, devFirst)
+	if err == nil {
+		return &SupportMatrixResult{Matrix: matrix, Flavor: flavor}, nil
+	}
+	primaryErr := err
+
+	fallbackVersion, ok := previousMinorVersion(rancherVersion)
+	if !ok {
+		return nil, primaryErr
+	}
+
+	matrix, flavor, err = fetchSupportMatrixFlavored(fallbackVersion, devFirst)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"no KDM data for Rancher %s (release or dev), and fallback to %s also failed:\n  primary:  %w\n  fallback: %w",
+			rancherVersion, fallbackVersion, primaryErr, err,
+		)
+	}
+	return &SupportMatrixResult{Matrix: matrix, Flavor: flavor, UsedFallbackMinor: true}, nil
+}
+
+// fetchSupportMatrixFlavored downloads and parses the KDM for rancherVersion,
+// trying each flavor in order and returning whichever one succeeds first.
+func fetchSupportMatrixFlavored(rancherVersion string, order []KDMFlavor) (*SupportMatrix, KDMFlavor, error) {
 	minor := majorMinor(rancherVersion)
 
-	data, err := fetchKDM(minor)
+	data, flavor, err := fetchKDM(minor, order)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	versions := extractVersions(data, rancherVersion)
 	if len(versions) == 0 {
-		return nil, fmt.Errorf(
+		return nil, "", fmt.Errorf(
 			"KDM data for Rancher v%s contained no k8s versions — "+
 				"the format may have changed; check https://www.suse.com/suse-rancher/support-matrix/",
 			rancherVersion,
@@ -148,28 +224,50 @@ func FetchSupportMatrix(rancherVersion string) (*SupportMatrix, error) {
 	return &SupportMatrix{
 		RancherVersion: rancherVersion,
 		k8sVersions:    versions,
-	}, nil
+	}, flavor, nil
 }
 
-func fetchKDM(rancherMinor string) (*kdmData, error) {
+// previousMinorVersion computes "MAJOR.(MINOR-1).0" from a version string,
+// used as the KDM fallback target. Returns ok=false if the minor can't be
+// parsed or is already 0 (nothing to fall back to).
+func previousMinorVersion(v string) (string, bool) {
+	v = strings.TrimPrefix(v, "v")
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) < 2 {
+		return "", false
+	}
+	var major, minor int
+	if _, err := fmt.Sscanf(parts[0], "%d", &major); err != nil {
+		return "", false
+	}
+	if _, err := fmt.Sscanf(parts[1], "%d", &minor); err != nil {
+		return "", false
+	}
+	if minor == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("%d.%d.0", major, minor-1), true
+}
+
+// fetchKDM tries each flavor in order for rancherMinor, returning the data
+// from whichever succeeds first, along with which flavor that was.
+func fetchKDM(rancherMinor string, order []KDMFlavor) (*kdmData, KDMFlavor, error) {
 	client := &http.Client{Timeout: httpTimeout}
 
-	primary := fmt.Sprintf(kdmURLTemplate, rancherMinor)
-	if data, err := doFetch(client, primary); err == nil {
-		return data, nil
+	var tried []string
+	for _, flavor := range order {
+		url := kdmURL(flavor, rancherMinor)
+		if data, err := doFetch(client, url); err == nil {
+			return data, flavor, nil
+		}
+		tried = append(tried, fmt.Sprintf("  %s: %s", flavor, url))
 	}
 
-	fallback := fmt.Sprintf(kdmFallbackTemplate, rancherMinor)
-	data, err := doFetch(client, fallback)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"could not fetch KDM data for Rancher v%s from either source:\n"+
-				"  primary:  %s\n  fallback: %s\n"+
-				"Check connectivity or specify --k8s-version manually",
-			rancherMinor, primary, fallback,
-		)
-	}
-	return data, nil
+	return nil, "", fmt.Errorf(
+		"could not fetch KDM data for Rancher v%s from any source:\n%s\n"+
+			"Check connectivity or specify --k8s-version manually",
+		rancherMinor, strings.Join(tried, "\n"),
+	)
 }
 
 func doFetch(client *http.Client, url string) (*kdmData, error) {

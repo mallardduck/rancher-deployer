@@ -21,6 +21,7 @@ func newResolveCmd() *cobra.Command {
 	var outputFormat string
 	var prime bool
 	var channel string
+	var commit string
 
 	cmd := &cobra.Command{
 		Use:   "resolve",
@@ -35,35 +36,55 @@ func newResolveCmd() *cobra.Command {
   rancher-deployer resolve --rancher-version 2.8.5
   rancher-deployer resolve --rancher-version 2.8.5 --k8s-version 1.27
   rancher-deployer resolve --rancher-version 2.8.5 --mode k3s --output k3s-version
-  rancher-deployer resolve --rancher-version 2.8.5 --output json`,
+  rancher-deployer resolve --rancher-version 2.8.5 --output json
+
+  # Auto-resolve the newest patch in a minor
+  rancher-deployer resolve --rancher-version 2.8
+
+  # Auto-resolve the newest head build for a minor
+  rancher-deployer resolve --channel head --rancher-version 2.15
+
+  # Resolve a specific reported head build by commit
+  rancher-deployer resolve --channel head --rancher-version 2.15 --commit b03c4de
+
+  # Prime head builds share one repo across minors, so a commit alone is enough
+  rancher-deployer resolve --prime --channel head --commit b03c4de`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			normalizedChannel, err := rancher.NormaliseChannel(channel)
 			if err != nil {
 				return err
 			}
 
-			autoResolved := rancherVersion == ""
-			if autoResolved {
-				var latest string
-				latest, err = rancher.FetchLatestVersion(prime, normalizedChannel)
-				if err != nil {
-					return fmt.Errorf("could not resolve latest Rancher version: %w", err)
-				}
-				rancherVersion = latest
+			requestedVersion := strings.TrimPrefix(rancherVersion, "v")
+
+			chart, err := resolveChart(prime, normalizedChannel, requestedVersion, commit)
+			if err != nil {
+				return fmt.Errorf("could not resolve Rancher version: %w", err)
 			}
+			rancherVersion = chart.Version
+			autoResolved := requestedVersion != rancherVersion
+			isPrerelease := chart.IsPrerelease
 
-			rancherVersion = strings.TrimPrefix(rancherVersion, "v")
-
-			// Fast path: rancher-version output only needs the Helm index lookup above.
+			// Fast path: rancher-version output only needs the chart resolution above.
 			if outputFormat == "rancher-version" {
 				fmt.Println(rancherVersion)
 				return nil
 			}
 
-			isPrerelease := k8sresolver.IsPrerelease(rancherVersion)
+			// KDM only understands major.minor. The resolved chart version is
+			// safe to use for non-head channels (always a plain patch version),
+			// but head builds carry a git hash that majorMinor() can't parse
+			// reliably (community head, in particular, has no patch segment at
+			// all — e.g. "2.15-<hash>-head"). Use whatever minor the user
+			// actually asked for instead; fall back to the resolved version only
+			// when no version was given at all (auto-latest, non-head only).
+			kdmVersion := requestedVersion
+			if kdmVersion == "" {
+				kdmVersion = rancherVersion
+			}
 
 			// Resolve all versions (needed for remaining output formats)
-			matrix, err := kdm.FetchSupportMatrix(rancherVersion)
+			matrix, err := kdm.FetchSupportMatrix(kdmVersion)
 			if err != nil {
 				return fmt.Errorf("support matrix lookup failed: %w", err)
 			}
@@ -126,7 +147,14 @@ func newResolveCmd() *cobra.Command {
 				// Human-readable output (default)
 				fmt.Println()
 				if autoResolved {
-					printInfo("Auto-resolved latest Rancher version: v%s (channel: %s)", rancherVersion, normalizedChannel)
+					switch {
+					case requestedVersion == "" && commit != "":
+						printInfo("Resolved v%s from commit %s (channel: %s)", rancherVersion, commit, normalizedChannel)
+					case requestedVersion == "":
+						printInfo("Auto-resolved latest Rancher version: v%s (channel: %s)", rancherVersion, normalizedChannel)
+					default:
+						printInfo("Auto-resolved v%s from requested %s (channel: %s)", rancherVersion, requestedVersion, normalizedChannel)
+					}
 					fmt.Println()
 				}
 				printStep(1, "Fetching Rancher support matrix")
@@ -154,12 +182,13 @@ func newResolveCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&rancherVersion, "rancher-version", "", "Rancher version (omit to auto-resolve latest)")
+	cmd.Flags().StringVar(&rancherVersion, "rancher-version", "", "Rancher version (omit to auto-resolve latest). A bare minor (e.g. 2.8) auto-resolves the newest patch (or newest head build for --channel head, which requires one)")
 	cmd.Flags().StringVar(&k8sVersion, "k8s-version", "", "Target k8s major.minor (optional)")
 	cmd.Flags().StringVar(&mode, "mode", "", "k3s or k3d (default: auto-detect)")
 	cmd.Flags().StringVar(&outputFormat, "output", "", "Output format: k3s-version, k3d-version, k8s-version, json (default: human-readable)")
 	cmd.Flags().BoolVar(&prime, "prime", false, "Use Rancher Prime repository for version resolution")
-	cmd.Flags().StringVar(&channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha")
+	cmd.Flags().StringVar(&channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha, head (continuously-published head builds — requires a minor, e.g. --rancher-version 2.15)")
+	cmd.Flags().StringVar(&commit, "commit", "", "Pin --channel head to the head build whose commit starts with this (instead of the newest one). With --prime, --rancher-version can be omitted — Prime head builds share one repo across minors")
 
 	return cmd
 }
