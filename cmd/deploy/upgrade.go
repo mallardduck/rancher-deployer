@@ -99,9 +99,13 @@ func runUpgrade(f *upgradeFlags) error {
 	var kdmFlavor kdm.KDMFlavor
 	var usedFallbackKDM bool
 	if channel == rancher.ChannelHead {
-		matrix, kdmFlavor, usedFallbackKDM, err = kdm.FetchSupportMatrixWithFallback(f.rancherVersion)
-		if err == nil && usedFallbackKDM {
-			printWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", f.rancherVersion)
+		var result *kdm.SupportMatrixResult
+		result, err = kdm.FetchSupportMatrixWithFallback(f.rancherVersion)
+		if err == nil {
+			matrix, kdmFlavor, usedFallbackKDM = result.Matrix, result.Flavor, result.UsedFallbackMinor
+			if usedFallbackKDM {
+				printWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", f.rancherVersion)
+			}
 		}
 	} else {
 		matrix, err = kdm.FetchSupportMatrix(f.rancherVersion)

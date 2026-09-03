@@ -162,34 +162,44 @@ func FetchSupportMatrix(rancherVersion string) (*SupportMatrix, error) {
 	return matrix, err
 }
 
+// SupportMatrixResult is what FetchSupportMatrixWithFallback resolves for a
+// head-channel install: the support matrix itself, which KDM branch it
+// actually came from, and whether the previous minor's data had to be used.
+type SupportMatrixResult struct {
+	Matrix            *SupportMatrix
+	Flavor            KDMFlavor
+	UsedFallbackMinor bool
+}
+
 // FetchSupportMatrixWithFallback resolves KDM data for a head-channel
 // install. Head builds are inherently dev/bleeding-edge rather than tied to
 // an official release, so the dev branch is checked before the release
 // branch — for the target minor, and (if neither has data for it yet) for
-// the previous minor too, tried exactly once. flavor reports which branch
-// the returned data actually came from, and usedFallbackMinor reports
-// whether the previous minor's data had to be used, so callers can warn
-// that k8s compatibility isn't guaranteed for it.
-func FetchSupportMatrixWithFallback(rancherVersion string) (matrix *SupportMatrix, flavor KDMFlavor, usedFallbackMinor bool, err error) {
-	matrix, flavor, err = fetchSupportMatrixFlavored(rancherVersion, devFirst)
+// the previous minor too, tried exactly once. Result.Flavor reports which
+// branch the returned data actually came from, and
+// Result.UsedFallbackMinor reports whether the previous minor's data had to
+// be used, so callers can warn that k8s compatibility isn't guaranteed for
+// it.
+func FetchSupportMatrixWithFallback(rancherVersion string) (*SupportMatrixResult, error) {
+	matrix, flavor, err := fetchSupportMatrixFlavored(rancherVersion, devFirst)
 	if err == nil {
-		return matrix, flavor, false, nil
+		return &SupportMatrixResult{Matrix: matrix, Flavor: flavor}, nil
 	}
 	primaryErr := err
 
 	fallbackVersion, ok := previousMinorVersion(rancherVersion)
 	if !ok {
-		return nil, "", false, primaryErr
+		return nil, primaryErr
 	}
 
 	matrix, flavor, err = fetchSupportMatrixFlavored(fallbackVersion, devFirst)
 	if err != nil {
-		return nil, "", false, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"no KDM data for Rancher %s (release or dev), and fallback to %s also failed:\n  primary:  %w\n  fallback: %w",
 			rancherVersion, fallbackVersion, primaryErr, err,
 		)
 	}
-	return matrix, flavor, true, nil
+	return &SupportMatrixResult{Matrix: matrix, Flavor: flavor, UsedFallbackMinor: true}, nil
 }
 
 // fetchSupportMatrixFlavored downloads and parses the KDM for rancherVersion,

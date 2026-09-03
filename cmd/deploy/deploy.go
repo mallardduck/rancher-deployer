@@ -113,10 +113,11 @@ func runDeploy(f *deployFlags) error {
 	var kdmFlavor kdm.KDMFlavor
 	var usedFallbackKDM bool
 	if channel == rancher.ChannelHead {
-		matrix, kdmFlavor, usedFallbackKDM, err = kdm.FetchSupportMatrixWithFallback(f.rancherVersion)
-		if err != nil {
-			return fmt.Errorf("support matrix lookup failed: %w", err)
+		result, resultErr := kdm.FetchSupportMatrixWithFallback(f.rancherVersion)
+		if resultErr != nil {
+			return fmt.Errorf("support matrix lookup failed: %w", resultErr)
 		}
+		matrix, kdmFlavor, usedFallbackKDM = result.Matrix, result.Flavor, result.UsedFallbackMinor
 		if usedFallbackKDM {
 			printWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", f.rancherVersion)
 		}
