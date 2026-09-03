@@ -60,10 +60,10 @@ func newDeployCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&f.rancherVersion, "rancher-version", "", "Rancher version to install, e.g. 2.8.5 (required)")
+	cmd.Flags().StringVar(&f.rancherVersion, "rancher-version", "", "Rancher version to install, e.g. 2.8.5. A bare minor (e.g. 2.8) auto-resolves the newest patch (or newest head build for --channel head). Required")
 	cmd.Flags().StringVar(&f.k8sVersion, "k8s-version", "", "Target k8s major.minor, e.g. 1.28 (default: auto-select from support matrix)")
 	cmd.Flags().BoolVar(&f.prime, "prime", false, "Use Rancher Prime instead of community edition")
-	cmd.Flags().StringVar(&f.channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha")
+	cmd.Flags().StringVar(&f.channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha, head (continuously-published head builds — requires a minor, e.g. --rancher-version 2.15)")
 	cmd.Flags().StringVar(&f.mode, "mode", "", "Force install mode: k3s or k3d (default: auto-detect)")
 	cmd.Flags().StringVar(&f.hostname, "hostname", "", "Hostname for Rancher ingress (default: <node-ip>.sslip.io)")
 	cmd.Flags().StringVar(&f.namespace, "namespace", "cattle-system", "Kubernetes namespace for Rancher")
@@ -82,7 +82,11 @@ func newDeployCmd() *cobra.Command {
 func runDeploy(f *deployFlags) error {
 	// Normalise version — strip leading 'v'
 	f.rancherVersion = strings.TrimPrefix(f.rancherVersion, "v")
-	isPrerelease := k8sresolver.IsPrerelease(f.rancherVersion)
+
+	channel, err := rancher.NormaliseChannel(f.channel)
+	if err != nil {
+		return err
+	}
 
 	fmt.Println()
 	printBanner()
@@ -105,9 +109,21 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Step 2: Resolve Rancher support matrix ───────────────────────────────
 	printStep(2, "Fetching Rancher support matrix")
-	matrix, err := kdm.FetchSupportMatrix(f.rancherVersion)
-	if err != nil {
-		return fmt.Errorf("support matrix lookup failed: %w", err)
+	var matrix *kdm.SupportMatrix
+	if channel == rancher.ChannelHead {
+		var usedFallback bool
+		matrix, usedFallback, err = kdm.FetchSupportMatrixWithFallback(f.rancherVersion)
+		if err != nil {
+			return fmt.Errorf("support matrix lookup failed: %w", err)
+		}
+		if usedFallback {
+			printWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", f.rancherVersion)
+		}
+	} else {
+		matrix, err = kdm.FetchSupportMatrix(f.rancherVersion)
+		if err != nil {
+			return fmt.Errorf("support matrix lookup failed: %w", err)
+		}
 	}
 	printInfo("Rancher v%s supports k8s versions: %s",
 		f.rancherVersion, strings.Join(matrix.SupportedMinors(), ", "))
@@ -145,11 +161,10 @@ func runDeploy(f *deployFlags) error {
 
 	// ── Step 6: Resolve Helm chart details ──────────────────────────────────
 	printStep(6, "Resolving Helm chart")
-	channel, err := rancher.NormaliseChannel(f.channel)
+	chartRef, err := rancher.ResolveChart(f.prime, channel, f.rancherVersion)
 	if err != nil {
 		return err
 	}
-	chartRef := rancher.ChartRef(f.prime, isPrerelease, channel, f.rancherVersion)
 	printInfo("Chart: %s", chartRef.String())
 
 	// ── Step 7: Build Helm values ────────────────────────────────────────────
@@ -214,7 +229,7 @@ func runDeploy(f *deployFlags) error {
 	}
 
 	fmt.Println()
-	printSuccess("Rancher v%s deployed successfully!", f.rancherVersion)
+	printSuccess("Rancher v%s deployed successfully!", chartRef.Version)
 	printInfo("Access URL : https://%s", helmValues.Hostname)
 	printInfo("Username   : admin")
 	printInfo("Password   : %s", f.bootstrapPassword)
@@ -238,6 +253,17 @@ func buildProvider(mode, clusterName string) (provider.Provider, error) {
 	}
 }
 
+// versionLine formats the Rancher version line for a plan/upgrade summary,
+// noting the original request alongside the resolved version whenever a bare
+// minor (or head channel) caused them to differ — e.g.
+// "v2.15.2-fbf2130-head (requested: 2.15, Prime head)".
+func versionLine(requested, resolved, edition string) string {
+	if requested == resolved {
+		return fmt.Sprintf("v%s (%s)", resolved, edition)
+	}
+	return fmt.Sprintf("v%s (requested: %s, %s)", resolved, requested, edition)
+}
+
 func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer string, chart rancher.Chart, hv rancher.HelmValues) { //nolint:revive // 7 args are all distinct plan fields; a wrapper struct would add noise without clarity
 	edition := "Community"
 	if f.prime {
@@ -245,7 +271,7 @@ func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer string, char
 	}
 	edition += " " + f.channel
 	fmt.Printf("%s━━ Deployment Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
-	fmt.Printf("  Rancher version  : v%s (%s)\n", f.rancherVersion, edition)
+	fmt.Printf("  Rancher version  : %s\n", versionLine(f.rancherVersion, chart.Version, edition))
 	fmt.Printf("  Kubernetes       : %s\n", k8sVer)
 	fmt.Printf("  Cluster tool     : %s @ %s\n", mode, clusterVer)
 	fmt.Printf("  cert-manager     : %s\n", certMgrVer)
