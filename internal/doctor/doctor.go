@@ -2,7 +2,7 @@
 //
 // TODO: Future enhancement - Auto-fix missing dependencies
 // Add a --fix flag that automatically downloads missing binaries using github.com/mallardduck/ghreleases
-// and stores them in a local .bin/ directory. See TODO.md for full implementation plan.
+// and stores them in a local .bin/ directory. See docs/roadmap.md for full implementation plan.
 package doctor
 
 import (
