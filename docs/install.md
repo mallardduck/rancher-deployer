@@ -4,7 +4,7 @@
 
 Prebuilt binaries for `linux`/`darwin` on `amd64`/`arm64` are published on the
 [Releases page](https://github.com/mallardduck/rancher-deployer/releases), each with a
-`checksums.txt` for verification.
+`rancher-deployer_<version>_checksums.txt` for verification.
 
 ```bash
 # Set these for your platform, e.g. os=darwin arch=arm64

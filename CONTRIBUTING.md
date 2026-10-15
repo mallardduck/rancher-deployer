@@ -29,9 +29,28 @@ Thanks for your interest in contributing!
 ## Project Structure
 
 ```
-cmd/deploy/     - CLI commands (Cobra)
-internal/       - Implementation packages
+main.go                 - Entrypoint
+cmd/deploy/             - CLI commands (Cobra): deploy, upgrade, resolve, teardown, doctor, self-update, version
+internal/
+  clusters/             - Cluster backends
+  detect/               - Deployment mode detection (k3s, k3d, existing)
+  doctor/               - Dependency and health checks
+  helm/                 - Helm backend interface and implementations
+  k8sresolver/          - k8s and k3s/k3d version resolution
+  kdm/                  - Rancher KDM fetching and support-matrix parsing
+  provider/             - Provider interface each cluster backend implements
+  rancher/              - Chart references, values, cert-manager, deploy
+  runner/               - os/exec wrapper (print + run + capture)
+  selfupdate/           - Self-update via binup against GitHub releases
+  upgrade/              - Upgrade validation logic
+  version/              - Build-time version info
 ```
+
+## Extending
+
+**Adding SSH/remote mode:** the `runner` package is the only place that shells out.
+A `runner.Remote` that wraps `golang.org/x/crypto/ssh` (or shells to the system `ssh`
+binary) would slot in cleanly — the rest of the codebase doesn't need to change.
 
 ## Testing
 

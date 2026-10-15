@@ -26,305 +26,75 @@ rancher-deployer deploy --rancher-version 2.8.5
 
 ---
 
-## Installation
+## Install
 
-### From a GitHub release (recommended)
+Prebuilt binaries for `linux` and `darwin` on `amd64` and `arm64` are published on the
+[Releases page](https://github.com/mallardduck/rancher-deployer/releases).
 
-Prebuilt binaries for `linux`/`darwin` on `amd64`/`arm64` are published on the
-[Releases page](https://github.com/mallardduck/rancher-deployer/releases), each with a
-`checksums.txt` for verification.
-
-```bash
-# Set these for your platform, e.g. os=darwin arch=arm64
-os=linux
-arch=amd64
-version=$(curl -fsSL https://api.github.com/repos/mallardduck/rancher-deployer/releases/latest | grep -m1 '"tag_name"' | cut -d'"' -f4)
-
-curl -fsSL -o rancher-deployer.tar.gz \
-  "https://github.com/mallardduck/rancher-deployer/releases/download/${version}/rancher-deployer_${version#v}_${os}_${arch}.tar.gz"
-tar -xzf rancher-deployer.tar.gz rancher-deployer
-sudo install -m 0755 rancher-deployer /usr/local/bin/rancher-deployer
-```
-
-Once installed, keep it up to date with the built-in updater, which checks the same
-GitHub releases and verifies the downloaded binary against the published checksums:
+**Quick install** — detects your OS and architecture, downloads the latest release, and
+installs it to `/usr/local/bin`:
 
 ```bash
-rancher-deployer self-update          # check, prompt, and apply if available
-rancher-deployer self-update --check  # just check
+os=$(uname -s | tr '[:upper:]' '[:lower:]'); arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/'); \
+v=$(curl -fsSL https://api.github.com/repos/mallardduck/rancher-deployer/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1); \
+curl -fsSL "https://github.com/mallardduck/rancher-deployer/releases/download/${v}/rancher-deployer_${v#v}_${os}_${arch}.tar.gz" \
+  | sudo tar -xz -C /usr/local/bin rancher-deployer
 ```
 
-### From source (requires Go 1.25+)
+Check it worked:
 
 ```bash
-git clone https://github.com/mallardduck/rancher-deployer
-cd rancher-deployer
-make build          # produces ./rancher-deployer
-make install        # installs to $GOPATH/bin
+rancher-deployer version
 ```
 
-### Cross-compile
+Keep it current with the built-in updater:
 
 ```bash
-make build-all      # builds linux-amd64, linux-arm64, darwin-amd64, darwin-arm64
-ls dist/
+rancher-deployer self-update
 ```
 
----
+`deploy` also needs `helm`, `kubectl`, and `k3s` or `k3d` on your `PATH`; run
+`rancher-deployer doctor` to check. For checksum verification, building from source, and
+the full prerequisites list, see the [Installation guide](docs/install.md).
 
-## Prerequisites
+## Quick start
 
-The binary shells out to these tools — they must be in `PATH` on the target node:
+```bash
+# See what would be installed, without touching anything
+rancher-deployer deploy --rancher-version 2.8.5 --dry-run
 
-| Tool      | Required for        |
-|-----------|---------------------|
-| `helm`    | Always              |
-| `kubectl` | Always              |
-| `k3d`     | k3d mode (auto-installed if missing) |
-| `k3s`     | k3s mode (installed via official script) |
-| `curl`    | k3s install script  |
+# Install
+rancher-deployer deploy --rancher-version 2.8.5
 
----
+# Upgrade later
+rancher-deployer upgrade --rancher-version 2.8.6
+
+# Remove everything
+rancher-deployer teardown
+```
 
 ## Commands
 
-### `deploy` — full install
+| Command       | Purpose |
+|---------------|---------|
+| `deploy`      | Install a cluster, cert-manager, and Rancher |
+| `resolve`     | Show the versions that would be used, without installing |
+| `upgrade`     | Upgrade an existing Rancher installation, with safety checks |
+| `teardown`    | Remove Rancher, cert-manager, and the cluster |
+| `doctor`      | Check that required tools are available |
+| `self-update` | Update the `rancher-deployer` binary itself |
 
-```
-rancher-deployer deploy --rancher-version <version> [flags]
-```
+Flags and details are in [Commands](docs/commands.md).
 
-| Flag                     | Default           | Description |
-|--------------------------|-------------------|-------------|
-| `--rancher-version`      | *(required)*      | Rancher version, e.g. `2.8.5` or `v2.8.5` |
-| `--k8s-version`          | *(auto)*          | Target k8s major.minor, e.g. `1.28` |
-| `--prime`                | `false`           | Use Rancher Prime instead of community edition |
-| `--mode`                 | *(auto-detect)*   | Force `k3s` or `k3d` |
-| `--hostname`             | `<ip>.sslip.io`   | Rancher ingress hostname |
-| `--namespace`            | `cattle-system`   | Kubernetes namespace |
-| `--values-file`          | *(none)*          | Path to Helm values YAML |
-| `--set key=value`        | *(none)*          | Set individual Helm values (repeatable) |
-| `--cluster-name`         | `rancher-local`   | k3d cluster name (k3d mode only) |
-| `--dry-run`              | `false`           | Print plan without executing |
+## Documentation
 
-### `resolve` — inspect resolved versions (no install)
+- [Installation](docs/install.md)
+- [Commands](docs/commands.md)
+- [Examples](docs/examples.md)
+- [Helm values](docs/helm-values.md)
+- [Idempotency & cleanup](docs/idempotency-and-cleanup.md)
+- [Roadmap](docs/roadmap.md)
+- [Design decisions](docs/decisions/)
+- [Demo image](docs/demo/README.md)
 
-```
-rancher-deployer resolve --rancher-version <version> [--k8s-version <minor>] [--mode k3s|k3d]
-```
-
-Useful for scripting or verifying what versions would be selected before committing to a full deploy.
-
-### `upgrade` — upgrade an existing Rancher installation
-
-```
-rancher-deployer upgrade --rancher-version <version> [flags]
-```
-
-| Flag                     | Default           | Description |
-|--------------------------|-------------------|-------------|
-| `--rancher-version`      | *(required)*      | Target Rancher version to upgrade to |
-| `--namespace`            | `cattle-system`   | Namespace where Rancher is installed |
-| `--prime`                | `false`           | Use Rancher Prime chart |
-| `--channel`              | `stable`          | Release channel: `stable` (GA), `latest` (RC), `alpha` |
-| `--values-file`          | *(none)*          | Path to Helm values YAML |
-| `--set key=value`        | *(none)*          | Override Helm chart value (repeatable) |
-| `--dry-run`              | `false`           | Print resolved plan without executing |
-| `--yes`                  | `false`           | Skip confirmation prompt |
-| `--force`                | `false`           | Skip upgrade-path and k8s-compatibility checks |
-
-**Upgrade validation:**
-- Prevents downgrades
-- Prevents skipping minor versions (must upgrade one minor at a time)
-- Validates cluster k8s version is compatible with target Rancher version
-- Use `--force` to bypass checks (e.g., for pre-release testing)
-
-### `teardown` — remove a Rancher deployment and cluster
-
-```
-rancher-deployer teardown [flags]
-```
-
-| Flag                     | Default           | Description |
-|--------------------------|-------------------|-------------|
-| `--mode`                 | *(auto-detect)*   | Force `k3s` or `k3d` |
-| `--cluster-name`         | `rancher-local`   | k3d cluster name (k3d mode only) |
-| `--namespace`            | `cattle-system`   | Kubernetes namespace Rancher was installed into |
-| `--yes`                  | `false`           | Skip confirmation prompt |
-
-**Warning:** This is destructive and irreversible. It will:
-1. Uninstall the Rancher Helm release
-2. Remove cert-manager
-3. Delete the entire k3s/k3d cluster
-
-### `self-update` — update the binary itself
-
-```
-rancher-deployer self-update [flags]
-```
-
-| Flag        | Default | Description |
-|-------------|---------|-------------|
-| `--check`   | `false` | Only check for an update; don't prompt or apply |
-| `--yes, -y` | `false` | Skip confirmation prompt |
-
-Checks GitHub for a newer release of `rancher-deployer` and, on confirmation, replaces
-the running binary with it. Installs managed by a package manager (Homebrew, apt,
-Scoop) or otherwise not writable by the current user are detected and skipped, with
-guidance on how to update through that channel instead.
-
----
-
-## Examples
-
-```bash
-# Minimal — everything auto-resolved
-rancher-deployer deploy --rancher-version 2.8.5
-
-# Rancher Prime, pinned to k8s 1.27, force k3d
-rancher-deployer deploy \
-  --rancher-version 2.8.5 \
-  --prime \
-  --k8s-version 1.27 \
-  --mode k3d
-
-# Custom hostname + values file + individual overrides
-rancher-deployer deploy \
-  --rancher-version 2.8.5 \
-  --hostname rancher.example.com \
-  --values-file ./production-values.yaml \
-  --set replicas=3 \
-  --set auditLog.level=1 \
-  --set ingress.tls.source=letsEncrypt \
-  --set letsEncrypt.email=admin@example.com
-
-# Dry run — see the full plan before touching anything
-rancher-deployer deploy --rancher-version 2.8.5 --dry-run
-
-# Just check what versions would be used
-rancher-deployer resolve --rancher-version 2.8.5
-rancher-deployer resolve --rancher-version 2.8.5 --k8s-version 1.27
-
-# Upgrade to a new version
-rancher-deployer upgrade --rancher-version 2.8.6
-
-# Upgrade with dry-run to see the plan first
-rancher-deployer upgrade --rancher-version 2.9.0 --dry-run
-
-# Clean up everything
-rancher-deployer teardown
-rancher-deployer teardown --yes  # skip confirmation
-```
-
----
-
-## Helm values
-
-Values are applied in this order (last wins):
-
-1. Rancher chart defaults
-2. `--values-file <file>` — your base values YAML
-3. `--set key=value` flags — individual overrides
-
-The `hostname` value is always injected automatically unless you set it yourself via `--hostname` or `--set hostname=...`.
-
-**Example `values.yaml`:**
-
-```yaml
-replicas: 3
-bootstrapPassword: "change-me-on-first-login"
-auditLog:
-  level: 1
-ingress:
-  tls:
-    source: letsEncrypt
-letsEncrypt:
-  email: admin@example.com
-  environment: production
-```
-
----
-
-## Idempotency & Cleanup
-
-The `deploy` command is intentionally **not idempotent** — it **fails loudly** if:
-
-- A k3d cluster with the given name already exists
-- k3s is already running on the node
-- The `cert-manager` namespace exists
-- A `rancher` Helm release exists in the target namespace
-
-This is by design: partial state is dangerous, and silent re-runs can mask problems.
-
-**To clean up a failed or unwanted deployment, use:**
-
-```bash
-rancher-deployer teardown
-```
-
-Or manually remove individual components:
-
-```bash
-# Remove k3d cluster
-k3d cluster delete rancher-local
-
-# Uninstall k3s
-sudo /usr/local/bin/k3s-uninstall.sh
-
-# Remove Rancher Helm release
-helm uninstall rancher -n cattle-system
-
-# Remove cert-manager
-kubectl delete namespace cert-manager
-```
-
----
-
-## Project structure
-
-```
-rancher-deployer/
-├── main.go                     # Entrypoint
-├── cmd/deploy/
-│   ├── root.go                 # Cobra root command + Execute()
-│   ├── deploy.go               # `deploy` subcommand — orchestration
-│   ├── upgrade.go              # `upgrade` subcommand — Rancher version upgrades
-│   ├── resolve.go              # `resolve` subcommand — version inspection
-│   ├── teardown.go             # `teardown` subcommand — cleanup
-│   └── print.go                # CLI output helpers
-└── internal/
-    ├── detect/
-    │   └── detect.go           # k3s vs k3d auto-detection
-    ├── kdm/
-    │   └── kdm.go              # Rancher KDM fetching + support matrix parsing
-    ├── version/
-    │   └── version.go          # k8s + k3s version resolution from GitHub API
-    ├── k3s/
-    │   └── k3s.go              # k3s install + readiness
-    ├── k3d/
-    │   └── k3d.go              # k3d install + cluster creation
-    ├── rancher/
-    │   └── rancher.go          # Helm chart ref, values, cert-manager, deploy
-    └── runner/
-        └── runner.go           # os/exec wrapper (print + run + capture)
-```
-
----
-
-## Lifecycle
-
-This tool supports the full Rancher lifecycle:
-
-1. **Deploy** — Install Rancher on a new k3s/k3d cluster
-2. **Upgrade** — Upgrade Rancher to a new version with validation
-3. **Teardown** — Clean removal of Rancher and cluster
-
-The `upgrade` command includes safety checks to prevent:
-- Downgrades
-- Skipping minor versions
-- Incompatible k8s versions
-
-## Extending
-
-**Adding SSH/remote mode:**
-The `runner` package is the only place that shells out. A `runner.Remote` that wraps `golang.org/x/crypto/ssh` (or shells to the system `ssh` binary) would slot in cleanly — the rest of the codebase doesn't need to change.
+Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md).
