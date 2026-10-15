@@ -8,24 +8,42 @@ rancher-deployer deploy --rancher-version <version> [flags]
 
 | Flag                     | Default           | Description |
 |--------------------------|-------------------|-------------|
-| `--rancher-version`      | *(required)*      | Rancher version, e.g. `2.8.5` or `v2.8.5` |
+| `--rancher-version`      | *(required\*)*    | Rancher version, e.g. `2.8.5` or `v2.8.5`. A bare minor (`2.8`) resolves the newest patch |
 | `--k8s-version`          | *(auto)*          | Target k8s major.minor, e.g. `1.28` |
 | `--prime`                | `false`           | Use Rancher Prime instead of community edition |
+| `--channel`              | `stable`          | Release channel: `stable` (GA), `latest` (RC), `alpha`, `head` (see [Head builds](#head-builds)) |
+| `--commit`               | *(none)*          | With `--channel head`, pin to the head build whose commit starts with this |
 | `--mode`                 | *(auto-detect)*   | Force `k3s` or `k3d` |
 | `--hostname`             | `<ip>.sslip.io`   | Rancher ingress hostname |
 | `--namespace`            | `cattle-system`   | Kubernetes namespace |
+| `--bootstrap-password`   | `letsmein`        | Initial admin password for Rancher |
 | `--values-file`          | *(none)*          | Path to Helm values YAML |
 | `--set key=value`        | *(none)*          | Set individual Helm values (repeatable) |
 | `--cluster-name`         | `rancher-local`   | k3d cluster name (k3d mode only) |
+| `--failure-policy`       | `abort`           | If the install fails: `abort` (leave it for inspection) or `reinstall` (roll back/clean up automatically) |
 | `--dry-run`              | `false`           | Print plan without executing |
+| `--yes, -y`              | `false`           | Skip confirmation prompt (for CI/non-interactive use) |
+
+\* Not required with `--prime --channel head --commit`.
 
 ## `resolve` — inspect resolved versions (no install)
 
 ```
-rancher-deployer resolve --rancher-version <version> [--k8s-version <minor>] [--mode k3s|k3d]
+rancher-deployer resolve [--rancher-version <version>] [flags]
 ```
 
 Useful for scripting or verifying what versions would be selected before committing to a full deploy.
+With no `--rancher-version`, the latest version in the chosen channel is resolved.
+
+| Flag                | Default         | Description |
+|---------------------|-----------------|-------------|
+| `--rancher-version` | *(latest)*      | Rancher version; a bare minor (`2.8`) resolves the newest patch |
+| `--k8s-version`     | *(auto)*        | Target k8s major.minor |
+| `--prime`           | `false`         | Use the Rancher Prime repository |
+| `--channel`         | `stable`        | `stable`, `latest`, `alpha`, or `head` |
+| `--commit`          | *(none)*        | With `--channel head`, pin to a head build by commit prefix. With `--prime`, `--rancher-version` can be omitted |
+| `--mode`            | *(auto-detect)* | `k3s` or `k3d` |
+| `--output`          | *(human-readable)* | `k3s-version`, `k3d-version`, `k8s-version`, or `json` |
 
 ## `upgrade` — upgrade an existing Rancher installation
 
@@ -35,15 +53,19 @@ rancher-deployer upgrade --rancher-version <version> [flags]
 
 | Flag                     | Default           | Description |
 |--------------------------|-------------------|-------------|
-| `--rancher-version`      | *(required)*      | Target Rancher version to upgrade to |
+| `--rancher-version`      | *(required\*)*    | Target Rancher version to upgrade to. A bare minor (`2.9`) resolves the newest patch |
 | `--namespace`            | `cattle-system`   | Namespace where Rancher is installed |
 | `--prime`                | `false`           | Use Rancher Prime chart |
-| `--channel`              | `stable`          | Release channel: `stable` (GA), `latest` (RC), `alpha` |
+| `--channel`              | `stable`          | Release channel: `stable` (GA), `latest` (RC), `alpha`, `head` (see [Head builds](#head-builds)) |
+| `--commit`               | *(none)*          | With `--channel head`, pin to the head build whose commit starts with this |
 | `--values-file`          | *(none)*          | Path to Helm values YAML |
 | `--set key=value`        | *(none)*          | Override Helm chart value (repeatable) |
+| `--failure-policy`       | `abort`           | If the upgrade fails: `abort` (leave it for inspection) or `reinstall` (roll back automatically) |
 | `--dry-run`              | `false`           | Print resolved plan without executing |
-| `--yes`                  | `false`           | Skip confirmation prompt |
+| `--yes, -y`              | `false`           | Skip confirmation prompt |
 | `--force`                | `false`           | Skip upgrade-path and k8s-compatibility checks |
+
+\* Not required with `--prime --channel head --commit`.
 
 **Upgrade validation:**
 - Prevents downgrades
@@ -62,7 +84,7 @@ rancher-deployer teardown [flags]
 | `--mode`                 | *(auto-detect)*   | Force `k3s` or `k3d` |
 | `--cluster-name`         | `rancher-local`   | k3d cluster name (k3d mode only) |
 | `--namespace`            | `cattle-system`   | Kubernetes namespace Rancher was installed into |
-| `--yes`                  | `false`           | Skip confirmation prompt |
+| `--yes, -y`              | `false`           | Skip confirmation prompt |
 
 **Warning:** This is destructive and irreversible. It will:
 1. Uninstall the Rancher Helm release
@@ -84,3 +106,36 @@ Checks GitHub for a newer release of `rancher-deployer` and, on confirmation, re
 the running binary with it. Installs managed by a package manager (Homebrew, apt,
 Scoop) or otherwise not writable by the current user are detected and skipped, with
 guidance on how to update through that channel instead.
+
+## `doctor` — check system health
+
+```
+rancher-deployer doctor [flags]
+```
+
+Validates that the system meets the requirements for `rancher-deployer`: required and
+optional binaries, runtime environment (OS, container runtime), configuration, network
+connectivity to required endpoints, and the state of any existing installation.
+
+| Flag                | Default         | Description |
+|---------------------|-----------------|-------------|
+| `--mode`            | *(auto-detect)* | Force `k3s` or `k3d` |
+| `--skip-network`    | `false`         | Skip network connectivity checks (for offline environments) |
+| `--skip-state`      | `false`         | Skip existing-installation state checks |
+| `--network-timeout` | `10s`           | Timeout for network checks |
+
+Exits `0` if all checks pass (warnings are OK) and `1` if any critical check fails.
+
+## Head builds
+
+`--channel head` installs continuously-published, unreleased Rancher builds from
+`deploy`, `upgrade`, and `resolve`. It must be scoped to a bare minor
+(`--rancher-version 2.15`), which selects the newest head build. To reproduce a bug
+reported against a specific build, pin it with `--commit <sha-prefix>`:
+
+```bash
+rancher-deployer deploy --channel head --rancher-version 2.15 --commit b03c4de
+```
+
+Community and Prime publish head builds differently; see the
+[head builds design notes](decisions/head-builds.md) for details.
