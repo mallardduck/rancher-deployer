@@ -14,7 +14,8 @@ rancher-deployer deploy --rancher-version <version> [flags]
 | `--channel`              | `stable`          | Release channel: `stable` (GA), `latest` (RC), `alpha`, `head` (see [Head builds](#head-builds)) |
 | `--commit`               | *(none)*          | With `--channel head`, pin to the head build whose commit starts with this |
 | `--mode`                 | *(auto-detect)*   | Force `k3s` or `k3d` |
-| `--hostname`             | `<ip>.sslip.io`   | Rancher ingress hostname |
+| `--expose`               | `sslip`           | How Rancher is reached: `sslip` or `pangolin` (see [Exposing Rancher](expose.md)) |
+| `--hostname`             | *(per `--expose`)* | Rancher ingress hostname. Default `rancher.<ip>.sslip.io`; required with `--expose pangolin` |
 | `--namespace`            | `cattle-system`   | Kubernetes namespace |
 | `--bootstrap-password`   | `letsmein`        | Initial admin password for Rancher |
 | `--values-file`          | *(none)*          | Path to Helm values YAML |
@@ -58,6 +59,9 @@ rancher-deployer upgrade --rancher-version <version> [flags]
 | `--prime`                | `false`           | Use Rancher Prime chart |
 | `--channel`              | `stable`          | Release channel: `stable` (GA), `latest` (RC), `alpha`, `head` (see [Head builds](#head-builds)) |
 | `--commit`               | *(none)*          | With `--channel head`, pin to the head build whose commit starts with this |
+| `--expose`               | *(none)*          | Change how Rancher is reached: `sslip` or `pangolin`. Unset keeps the release's current hostname and TLS settings. See [Exposing Rancher](expose.md) |
+| `--hostname`             | *(none)*          | Hostname for the ingress; only valid with `--expose` |
+| `--mode`                 | *(auto-detect)*   | Cluster type (`k3s`, `k3d`, `existing`) used by `--expose` to configure ingress |
 | `--values-file`          | *(none)*          | Path to Helm values YAML |
 | `--set key=value`        | *(none)*          | Override Helm chart value (repeatable) |
 | `--failure-policy`       | `abort`           | If the upgrade fails: `abort` (leave it for inspection) or `reinstall` (roll back automatically) |

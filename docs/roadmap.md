@@ -59,6 +59,22 @@ $ rancher-deployer doctor --fix
 
 ---
 
+## `--expose ngrok`
+
+`--expose` currently supports `sslip` (default) and `pangolin`. An `ngrok` mode
+is not implemented: the maintainers have no ngrok account to test against, so it
+is deliberately rejected with a clear error instead of shipping untested.
+
+It should look much like the Pangolin mode (`internal/expose/pangolin.go`):
+the user supplies the public hostname, TLS is terminated at the tunnel
+(`tls=external`), the ingress controller must keep the tunnel's
+`X-Forwarded-Proto`, and `Verify` checks `/ping` through the public hostname.
+The ngrok agent's local API (`127.0.0.1:4040/api/tunnels`) may allow discovering
+the hostname instead of requiring `--hostname`. Contributions welcome — see
+issue #12.
+
+---
+
 ## If requested
 - `--verbose` flag for debugging
 - Shell completion (bash/zsh/fish)
