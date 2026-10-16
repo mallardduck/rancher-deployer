@@ -87,7 +87,15 @@ TARGETARCH   ?= amd64
 
 # Docker build arguments for local single-arch builds
 # (buildx auto-injects TARGETARCH, but plain 'docker build' doesn't)
-DOCKER_BUILD_ARGS := --build-arg TARGETARCH=$(TARGETARCH)
+# VERSION_BUILD_ARGS stamps the rancher-demo binary with the same build info as the CLI
+VERSION_BUILD_ARGS := \
+	--build-arg VERSION=$(VERSION) \
+	--build-arg COMMIT=$(COMMIT) \
+	--build-arg DATE=$(DATE)
+DOCKER_BUILD_ARGS := --build-arg TARGETARCH=$(TARGETARCH) $(VERSION_BUILD_ARGS)
+
+# Extra args for the buildx-machine image targets (build-image)
+IMAGE_ARGS ?= $(VERSION_BUILD_ARGS)
 
 # ---- Docker Build Targets (local single-arch builds) ----
 # For multi-arch builds, use: make build-image
@@ -132,7 +140,7 @@ PLATFORMS ?= linux/amd64,linux/arm64
 
 .PHONY: docker-buildx-rancher-demo
 docker-buildx-rancher-demo:
-	docker buildx build \
+	docker buildx build $(VERSION_BUILD_ARGS) \
 		--platform $(PLATFORMS) \
 		--target rancher-demo \
 		-t $(IMAGE_PREFIX)/rancher-demo:$(IMAGE_TAG) \

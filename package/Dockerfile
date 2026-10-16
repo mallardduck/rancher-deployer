@@ -10,12 +10,20 @@
 FROM rancher/hardened-build-base:v1.26.4b1 AS go-builder
 # TARGETARCH is automatically provided by buildx for multi-platform builds
 ARG TARGETARCH
+# Build metadata reported by `rancher-demo version` (.git is not in the build context)
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG DATE=unknown
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
-    go build -ldflags="-w -s" -o rancher-demo ./cmd/demo
+    go build -ldflags="-w -s \
+      -X github.com/mallardduck/rancher-deployer/internal/version.Version=${VERSION} \
+      -X github.com/mallardduck/rancher-deployer/internal/version.Commit=${COMMIT} \
+      -X github.com/mallardduck/rancher-deployer/internal/version.Date=${DATE}" \
+    -o rancher-demo ./cmd/demo
 
 # ============================================================================
 # Stage: BCI micro base
