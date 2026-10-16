@@ -4,11 +4,11 @@ package deploy
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/mallardduck/rancher-deployer/internal/cli"
 	clusterexisting "github.com/mallardduck/rancher-deployer/internal/clusters/existing"
 	clusterk3d "github.com/mallardduck/rancher-deployer/internal/clusters/k3d"
 	clusterk3s "github.com/mallardduck/rancher-deployer/internal/clusters/k3s"
@@ -105,18 +105,18 @@ func runDeploy(f *deployFlags) error {
 	}
 
 	fmt.Println()
-	printBanner()
+	cli.PrintBanner("Deployer")
 
 	// ── Step 1: Detect install mode ─────────────────────────────────────────
-	printStep(1, "Detecting install mode")
+	cli.PrintStep(1, "Detecting install mode")
 	mode, reason, err := detect.ResolveMode(f.mode)
 	if err != nil {
 		return err
 	}
 	if reason != "" {
-		printInfo("Auto-detected: %s (%s)", mode, reason)
+		cli.PrintInfo("Auto-detected: %s (%s)", mode, reason)
 	} else {
-		printInfo("Mode: %s", mode)
+		cli.PrintInfo("Mode: %s", mode)
 	}
 	clusterProvider, err := buildProvider(mode, f.clusterName)
 	if err != nil {
@@ -127,15 +127,15 @@ func runDeploy(f *deployFlags) error {
 	// Resolved before the support matrix because commit-only resolution
 	// (--prime --channel head --commit, no --rancher-version) doesn't know
 	// its minor until the chart is resolved.
-	printStep(2, "Resolving Helm chart")
-	chartRef, err := resolveChart(f.prime, channel, f.rancherVersion, f.commit)
+	cli.PrintStep(2, "Resolving Helm chart")
+	chartRef, err := cli.ResolveChart(f.prime, channel, f.rancherVersion, f.commit)
 	if err != nil {
 		return err
 	}
-	printInfo("Chart: %s", chartRef.String())
+	cli.PrintInfo("Chart: %s", chartRef.String())
 
 	// ── Step 3: Resolve Rancher support matrix ───────────────────────────────
-	printStep(3, "Fetching Rancher support matrix")
+	cli.PrintStep(3, "Fetching Rancher support matrix")
 	kdmTarget := f.rancherVersion
 	if kdmTarget == "" {
 		// Commit-only resolution: derive just the minor from the resolved
@@ -155,7 +155,7 @@ func runDeploy(f *deployFlags) error {
 		}
 		matrix, kdmFlavor, usedFallbackKDM = result.Matrix, result.Flavor, result.UsedFallbackMinor
 		if usedFallbackKDM {
-			printWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", kdmTarget)
+			cli.PrintWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", kdmTarget)
 		}
 	} else {
 		matrix, err = kdm.FetchSupportMatrix(kdmTarget)
@@ -163,22 +163,22 @@ func runDeploy(f *deployFlags) error {
 			return fmt.Errorf("support matrix lookup failed: %w", err)
 		}
 	}
-	printInfo("Rancher v%s supports k8s versions: %s",
+	cli.PrintInfo("Rancher v%s supports k8s versions: %s",
 		chartRef.Version, strings.Join(matrix.SupportedMinors(), ", "))
 
 	// ── Step 4: Resolve k8s version ─────────────────────────────────────────
-	printStep(4, "Resolving Kubernetes version")
+	cli.PrintStep(4, "Resolving Kubernetes version")
 	resolvedK8s, err := k8sresolver.ResolveK8s(f.k8sVersion, matrix)
 	if err != nil {
 		return err
 	}
-	printInfo("Target k8s version: %s", resolvedK8s)
+	cli.PrintInfo("Target k8s version: %s", resolvedK8s)
 
 	// ── Step 5: Resolve cluster version ──────────────────────────────────────
 	if mode == "existing" {
-		printStep(5, "Validating existing cluster")
+		cli.PrintStep(5, "Validating existing cluster")
 	} else {
-		printStep(5, "Resolving k3s/k3d version")
+		cli.PrintStep(5, "Resolving k3s/k3d version")
 	}
 	var clusterVersion string
 	clusterVersion, err = clusterProvider.ResolveClusterVersion(context.Background(), resolvedK8s)
@@ -186,19 +186,19 @@ func runDeploy(f *deployFlags) error {
 		return err
 	}
 	if mode != "existing" {
-		printInfo("Cluster version: %s", clusterVersion)
+		cli.PrintInfo("Cluster version: %s", clusterVersion)
 	}
 
 	// ── Step 6: Resolve cert-manager version ─────────────────────────────────
-	printStep(6, "Resolving cert-manager version")
+	cli.PrintStep(6, "Resolving cert-manager version")
 	certManagerVersion, err := rancher.ResolveCertManagerVersion()
 	if err != nil {
 		return err
 	}
-	printInfo("cert-manager version: %s", certManagerVersion)
+	cli.PrintInfo("cert-manager version: %s", certManagerVersion)
 
 	// ── Step 7: Build Helm values ────────────────────────────────────────────
-	printStep(7, "Building Helm values")
+	cli.PrintStep(7, "Building Helm values")
 	helmValues, err := rancher.BuildHelmValues(f.valuesFile, f.helmSet, f.hostname, f.namespace, f.bootstrapPassword)
 	if err != nil {
 		return err
@@ -206,11 +206,11 @@ func runDeploy(f *deployFlags) error {
 	helmValues.FailurePolicy = failurePolicy
 	if len(helmValues.SetFlags) > 0 {
 		for _, s := range helmValues.SetFlags {
-			printInfo("  --set %s", s)
+			cli.PrintInfo("  --set %s", s)
 		}
 	}
 	if helmValues.ValuesFile != "" {
-		printInfo("  --values %s", helmValues.ValuesFile)
+		cli.PrintInfo("  --values %s", helmValues.ValuesFile)
 	}
 
 	// ── Print plan ───────────────────────────────────────────────────────────
@@ -219,51 +219,51 @@ func runDeploy(f *deployFlags) error {
 
 	if f.dryRun {
 		fmt.Println()
-		printWarning("Dry run — no changes made.")
+		cli.PrintWarning("Dry run — no changes made.")
 		return nil
 	}
 
 	// ── Confirm ──────────────────────────────────────────────────────────────
-	if !f.yes && !promptConfirm("Proceed with deployment?") {
+	if !f.yes && !cli.PromptConfirm("Proceed with deployment?") {
 		fmt.Println("Aborted.")
 		return nil
 	}
 
 	// ── Step 8: Install cluster ───────────────────────────────────────────────
-	printStep(8, "Installing cluster")
+	cli.PrintStep(8, "Installing cluster")
 	if err := clusterProvider.Setup(context.Background(), provider.SetupOptions{ClusterVersion: clusterVersion}); err != nil {
 		return err
 	}
 
 	// ── Step 9: Install cert-manager ─────────────────────────────────────────
-	printStep(9, "Installing cert-manager")
+	cli.PrintStep(9, "Installing cert-manager")
 	if err := clusterProvider.Helm().InstallCertManager(certManagerVersion); err != nil {
 		return err
 	}
 
 	// ── Step 10: Ensure Helm repo ────────────────────────────────────────────
-	printStep(10, "Configuring Helm repo")
+	cli.PrintStep(10, "Configuring Helm repo")
 	if err := clusterProvider.Helm().EnsureRepo(chartRef.RepoName, chartRef.RepoURL, f.yes); err != nil {
 		return err
 	}
 
 	// ── Step 11: Deploy Rancher ───────────────────────────────────────────────
-	printStep(11, "Deploying Rancher via Helm")
+	cli.PrintStep(11, "Deploying Rancher via Helm")
 	if err := clusterProvider.Helm().Install(f.namespace, chartRef, helmValues); err != nil {
 		return err
 	}
 
 	// ── Step 12: Wait for Rancher ────────────────────────────────────────────
-	printStep(12, "Waiting for Rancher to become ready")
+	cli.PrintStep(12, "Waiting for Rancher to become ready")
 	if err := clusterProvider.Helm().WaitReady(f.namespace); err != nil {
 		return err
 	}
 
 	fmt.Println()
-	printSuccess("Rancher v%s deployed successfully!", chartRef.Version)
-	printInfo("Access URL : https://%s", helmValues.Hostname)
-	printInfo("Username   : admin")
-	printInfo("Password   : %s", f.bootstrapPassword)
+	cli.PrintSuccess("Rancher v%s deployed successfully!", chartRef.Version)
+	cli.PrintInfo("Access URL : https://%s", helmValues.Hostname)
+	cli.PrintInfo("Username   : admin")
+	cli.PrintInfo("Password   : %s", f.bootstrapPassword)
 	fmt.Println()
 
 	return nil
@@ -293,19 +293,6 @@ func minorOf(version string) string {
 		return version
 	}
 	return parts[0] + "." + parts[1]
-}
-
-// resolveChart dispatches to rancher.ResolveChart or
-// rancher.ResolveHeadChartByCommit depending on whether a commit was given,
-// and validates that --commit is only used with --channel head.
-func resolveChart(prime bool, channel, versionInput, commit string) (rancher.Chart, error) {
-	if commit == "" {
-		return rancher.ResolveChart(prime, channel, versionInput)
-	}
-	if channel != rancher.ChannelHead {
-		return rancher.Chart{}, fmt.Errorf("--commit only applies to --channel head")
-	}
-	return rancher.ResolveHeadChartByCommit(prime, versionInput, commit)
 }
 
 // versionLine formats the Rancher version line for a plan/upgrade summary,
@@ -354,7 +341,7 @@ func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer, kdmVer stri
 		edition = "Prime"
 	}
 	edition += " " + f.channel
-	fmt.Printf("%s━━ Deployment Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
+	fmt.Printf("%s━━ Deployment Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", cli.ColorCyan, cli.ColorReset)
 	fmt.Printf("  Rancher version  : %s\n", versionLine(f.rancherVersion, chart.Version, edition, f.commit))
 	fmt.Printf("  KDM              : %s\n", kdmVer)
 	fmt.Printf("  Kubernetes       : %s\n", k8sVer)
@@ -368,13 +355,5 @@ func printPlan(f *deployFlags, mode, k8sVer, clusterVer, certMgrVer, kdmVer stri
 	if f.dryRun {
 		fmt.Printf("  Mode             : DRY RUN\n")
 	}
-	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
-}
-
-// promptConfirm asks for a yes/no answer on stdin.
-func promptConfirm(prompt string) bool {
-	fmt.Printf("\n%s%s [y/N]: %s", colorYellow, prompt, colorReset)
-	var answer string
-	_, _ = fmt.Fscanln(os.Stdin, &answer)
-	return strings.ToLower(strings.TrimSpace(answer)) == "y"
+	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", cli.ColorCyan, cli.ColorReset)
 }

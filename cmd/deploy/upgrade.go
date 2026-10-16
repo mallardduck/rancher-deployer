@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mallardduck/rancher-deployer/internal/cli"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
 	"github.com/mallardduck/rancher-deployer/internal/upgrade"
@@ -82,45 +83,45 @@ func runUpgrade(f *upgradeFlags) error {
 	}
 
 	fmt.Println()
-	printBanner()
+	cli.PrintBanner("Deployer")
 
 	// ── Step 1: Detect installed version ─────────────────────────────────────
-	printStep(1, "Detecting installed Rancher version")
+	cli.PrintStep(1, "Detecting installed Rancher version")
 	currentVersion, err := rancher.InstalledVersion(f.namespace)
 	if err != nil {
 		return err
 	}
-	printInfo("Installed: v%s", currentVersion)
+	cli.PrintInfo("Installed: v%s", currentVersion)
 
 	// ── Step 2: Resolve Helm chart ────────────────────────────────────────────
 	// Resolved before upgrade-path validation and the support matrix because
 	// commit-only resolution (--prime --channel head --commit, no
 	// --rancher-version) doesn't know its minor until the chart is resolved.
-	printStep(2, "Resolving Helm chart")
-	chartRef, err := resolveChart(f.prime, channel, f.rancherVersion, f.commit)
+	cli.PrintStep(2, "Resolving Helm chart")
+	chartRef, err := cli.ResolveChart(f.prime, channel, f.rancherVersion, f.commit)
 	if err != nil {
 		return err
 	}
-	printInfo("Chart: %s", chartRef.String())
+	cli.PrintInfo("Chart: %s", chartRef.String())
 
 	// ── Step 3: Validate upgrade path ─────────────────────────────────────────
-	printStep(3, "Validating upgrade path")
+	cli.PrintStep(3, "Validating upgrade path")
 	if f.force {
-		printWarning("--force set: skipping upgrade-path validation")
+		cli.PrintWarning("--force set: skipping upgrade-path validation")
 	} else {
 		if pathErr := upgrade.ValidatePath(currentVersion, chartRef.Version); pathErr != nil {
 			return pathErr
 		}
-		printInfo("v%s → v%s is a valid upgrade path", currentVersion, chartRef.Version)
+		cli.PrintInfo("v%s → v%s is a valid upgrade path", currentVersion, chartRef.Version)
 	}
 
 	// ── Step 4: Fetch support matrix for target version ───────────────────────
-	printStep(4, "Fetching support matrix for Rancher v"+chartRef.Version)
+	cli.PrintStep(4, "Fetching support matrix for Rancher v"+chartRef.Version)
 	clusterK8s, err := rancher.ClusterK8sVersion()
 	if err != nil {
 		return err
 	}
-	printInfo("Cluster k8s: %s", clusterK8s)
+	cli.PrintInfo("Cluster k8s: %s", clusterK8s)
 
 	kdmTarget := f.rancherVersion
 	if kdmTarget == "" {
@@ -140,7 +141,7 @@ func runUpgrade(f *upgradeFlags) error {
 		if err == nil {
 			matrix, kdmFlavor, usedFallbackKDM = result.Matrix, result.Flavor, result.UsedFallbackMinor
 			if usedFallbackKDM {
-				printWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", kdmTarget)
+				cli.PrintWarning("No KDM data for Rancher %s yet — using the previous minor's support matrix as a best-effort approximation; k8s compatibility isn't guaranteed", kdmTarget)
 			}
 		}
 	} else {
@@ -150,13 +151,13 @@ func runUpgrade(f *upgradeFlags) error {
 		if !f.force {
 			return fmt.Errorf("support matrix lookup failed: %w", err)
 		}
-		printWarning("support matrix unavailable (%v) — skipping k8s compatibility check", err)
+		cli.PrintWarning("support matrix unavailable (%v) — skipping k8s compatibility check", err)
 	} else {
-		printInfo("Rancher v%s supports k8s: %s",
+		cli.PrintInfo("Rancher v%s supports k8s: %s",
 			chartRef.Version, strings.Join(matrix.SupportedMinors(), ", "))
 
 		// ── Step 5: Check current k8s version compatibility ───────────────────
-		printStep(5, "Checking cluster k8s compatibility")
+		cli.PrintStep(5, "Checking cluster k8s compatibility")
 		if _, compatErr := matrix.LatestPatchFor(clusterK8s); compatErr != nil {
 			if !f.force {
 				return fmt.Errorf(
@@ -166,24 +167,24 @@ func runUpgrade(f *upgradeFlags) error {
 					clusterK8s, chartRef.Version, strings.Join(matrix.SupportedMinors(), ", "),
 				)
 			}
-			printWarning("k8s %s not in support matrix for v%s — continuing anyway (--force)", clusterK8s, chartRef.Version)
+			cli.PrintWarning("k8s %s not in support matrix for v%s — continuing anyway (--force)", clusterK8s, chartRef.Version)
 		} else {
-			printInfo("Cluster k8s %s is compatible with Rancher v%s", clusterK8s, chartRef.Version)
+			cli.PrintInfo("Cluster k8s %s is compatible with Rancher v%s", clusterK8s, chartRef.Version)
 		}
 	}
 
 	// ── Step 6: Build Helm values (no bootstrapPassword on upgrade) ───────────
-	printStep(6, "Building Helm values")
+	cli.PrintStep(6, "Building Helm values")
 	helmValues := rancher.HelmValues{
 		ValuesFile:    f.valuesFile,
 		SetFlags:      f.helmSet,
 		FailurePolicy: failurePolicy,
 	}
 	if f.valuesFile != "" {
-		printInfo("  --values %s", f.valuesFile)
+		cli.PrintInfo("  --values %s", f.valuesFile)
 	}
 	for _, s := range f.helmSet {
-		printInfo("  --set %s", s)
+		cli.PrintInfo("  --set %s", s)
 	}
 
 	// ── Print plan ────────────────────────────────────────────────────────────
@@ -192,36 +193,36 @@ func runUpgrade(f *upgradeFlags) error {
 
 	if f.dryRun {
 		fmt.Println()
-		printWarning("Dry run — no changes made.")
+		cli.PrintWarning("Dry run — no changes made.")
 		return nil
 	}
 
 	// ── Confirm ───────────────────────────────────────────────────────────────
-	if !f.yes && !promptConfirm("Proceed with upgrade?") {
+	if !f.yes && !cli.PromptConfirm("Proceed with upgrade?") {
 		fmt.Println("Aborted.")
 		return nil
 	}
 
 	// ── Step 7: Ensure Helm repo ─────────────────────────────────────────────
-	printStep(7, "Configuring Helm repo")
+	cli.PrintStep(7, "Configuring Helm repo")
 	if err := rancher.EnsureHelmRepo(chartRef.RepoName, chartRef.RepoURL, f.yes); err != nil {
 		return err
 	}
 
 	// ── Step 8: Upgrade Rancher ───────────────────────────────────────────────
-	printStep(8, "Upgrading Rancher via Helm")
+	cli.PrintStep(8, "Upgrading Rancher via Helm")
 	if err := rancher.Upgrade(f.namespace, chartRef, helmValues); err != nil {
 		return err
 	}
 
 	// ── Step 9: Wait for rollout ──────────────────────────────────────────────
-	printStep(9, "Waiting for Rancher to become ready")
+	cli.PrintStep(9, "Waiting for Rancher to become ready")
 	if err := rancher.WaitReady(f.namespace); err != nil {
 		return err
 	}
 
 	fmt.Println()
-	printSuccess("Rancher upgraded to v%s successfully!", chartRef.Version)
+	cli.PrintSuccess("Rancher upgraded to v%s successfully!", chartRef.Version)
 	fmt.Println()
 
 	return nil
@@ -233,7 +234,7 @@ func printUpgradePlan(f *upgradeFlags, currentVersion, clusterK8s, kdmVer string
 		edition = "Prime"
 	}
 	edition += " " + f.channel
-	fmt.Printf("%s━━ Upgrade Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
+	fmt.Printf("%s━━ Upgrade Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", cli.ColorCyan, cli.ColorReset)
 	fmt.Printf("  From             : v%s\n", currentVersion)
 	fmt.Printf("  To               : %s\n", versionLine(f.rancherVersion, chart.Version, edition, f.commit))
 	fmt.Printf("  KDM              : %s\n", kdmVer)
@@ -247,5 +248,5 @@ func printUpgradePlan(f *upgradeFlags, currentVersion, clusterK8s, kdmVer string
 	if f.dryRun {
 		fmt.Printf("  Mode             : DRY RUN\n")
 	}
-	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", colorCyan, colorReset)
+	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", cli.ColorCyan, cli.ColorReset)
 }

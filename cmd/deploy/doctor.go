@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mallardduck/rancher-deployer/internal/cli"
 	"github.com/mallardduck/rancher-deployer/internal/detect"
 	"github.com/mallardduck/rancher-deployer/internal/doctor"
 )
@@ -61,7 +62,7 @@ Exit codes:
 }
 
 func runDoctor(flags *doctorFlags) error {
-	printBanner()
+	cli.PrintBanner("Deployer")
 
 	// Prepare options
 	opts := &doctor.CheckOptions{
@@ -99,20 +100,20 @@ func runDoctor(flags *doctorFlags) error {
 	// Summary
 	passed, warned, failed := countResults(results)
 	fmt.Println()
-	printInfo("Summary: %d passed, %d warnings, %d failed", passed, warned, failed)
+	cli.PrintInfo("Summary: %d passed, %d warnings, %d failed", passed, warned, failed)
 
 	// Final message and exit
 	fmt.Println()
 	if doctor.HasCriticalFailures(results) {
-		printWarning("Critical checks failed. Please address the errors above before deploying.")
+		cli.PrintWarning("Critical checks failed. Please address the errors above before deploying.")
 		// Return error to exit with code 1 (but avoid os.Exit to allow defers to run)
 		return fmt.Errorf("health check failed")
 	}
 
 	if warned > 0 {
-		printInfo("Your system has some warnings but is ready to deploy.")
+		cli.PrintInfo("Your system has some warnings but is ready to deploy.")
 	} else {
-		printSuccess("Your system is ready to deploy Rancher!")
+		cli.PrintSuccess("Your system is ready to deploy Rancher!")
 	}
 
 	return nil
@@ -137,7 +138,7 @@ func displayResults(results []doctor.CheckResult) {
 		}
 
 		fmt.Println()
-		fmt.Printf("%s%s%s%s\n", colorBold, colorCyan, cat.title, colorReset)
+		fmt.Printf("%s%s%s%s\n", cli.ColorBold, cli.ColorCyan, cat.title, cli.ColorReset)
 
 		for _, r := range catResults {
 			displayResult(r)
@@ -148,16 +149,16 @@ func displayResults(results []doctor.CheckResult) {
 func displayResult(r doctor.CheckResult) {
 	switch r.Status {
 	case doctor.StatusPass:
-		fmt.Printf("  %s✔%s %s: %s\n", colorGreen, colorReset, r.Name, r.Message)
+		fmt.Printf("  %s✔%s %s: %s\n", cli.ColorGreen, cli.ColorReset, r.Name, r.Message)
 	case doctor.StatusWarn:
-		fmt.Printf("  %s⚠%s %s: %s\n", colorYellow, colorReset, r.Name, r.Message)
+		fmt.Printf("  %s⚠%s %s: %s\n", cli.ColorYellow, cli.ColorReset, r.Name, r.Message)
 		if r.Remediation != "" {
-			fmt.Printf("    %s→%s %s\n", colorYellow, colorReset, r.Remediation)
+			fmt.Printf("    %s→%s %s\n", cli.ColorYellow, cli.ColorReset, r.Remediation)
 		}
 	case doctor.StatusFail:
-		fmt.Printf("  %s✗%s %s: %s\n", colorRed, colorReset, r.Name, r.Message)
+		fmt.Printf("  %s✗%s %s: %s\n", cli.ColorRed, cli.ColorReset, r.Name, r.Message)
 		if r.Remediation != "" {
-			fmt.Printf("    %s→%s %s\n", colorRed, colorReset, r.Remediation)
+			fmt.Printf("    %s→%s %s\n", cli.ColorRed, cli.ColorReset, r.Remediation)
 		}
 	}
 }

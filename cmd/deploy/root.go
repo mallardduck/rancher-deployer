@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mallardduck/rancher-deployer/internal/cli"
 )
 
 var rootCmd = &cobra.Command{
@@ -35,7 +37,7 @@ func Execute() {
 func init() {
 	rootCmd.AddCommand(newDeployCmd())
 	rootCmd.AddCommand(newUpgradeCmd())
-	rootCmd.AddCommand(newResolveCmd())
+	rootCmd.AddCommand(cli.NewResolveCmd("rancher-deployer"))
 	rootCmd.AddCommand(newTeardownCmd())
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newDoctorCmd())

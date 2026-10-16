@@ -1,4 +1,4 @@
-package deploy
+package cli
 
 import (
 	"encoding/json"
@@ -14,7 +14,8 @@ import (
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
 )
 
-func newResolveCmd() *cobra.Command {
+// NewResolveCmd builds the resolve command; binary is the name shown in help examples.
+func NewResolveCmd(binary string) *cobra.Command {
 	var rancherVersion string
 	var k8sVersion string
 	var mode string
@@ -26,7 +27,7 @@ func newResolveCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "resolve",
 		Short: "Resolve and print version information without installing anything",
-		Example: `  # Auto-resolve latest stable Rancher version
+		Example: strings.ReplaceAll(`  # Auto-resolve latest stable Rancher version
   rancher-deployer resolve
 
   # Auto-resolve latest from a specific repo
@@ -48,7 +49,7 @@ func newResolveCmd() *cobra.Command {
   rancher-deployer resolve --channel head --rancher-version 2.15 --commit b03c4de
 
   # Prime head builds share one repo across minors, so a commit alone is enough
-  rancher-deployer resolve --prime --channel head --commit b03c4de`,
+  rancher-deployer resolve --prime --channel head --commit b03c4de`, "rancher-deployer", binary),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			normalizedChannel, err := rancher.NormaliseChannel(channel)
 			if err != nil {
@@ -57,7 +58,7 @@ func newResolveCmd() *cobra.Command {
 
 			requestedVersion := strings.TrimPrefix(rancherVersion, "v")
 
-			chart, err := resolveChart(prime, normalizedChannel, requestedVersion, commit)
+			chart, err := ResolveChart(prime, normalizedChannel, requestedVersion, commit)
 			if err != nil {
 				return fmt.Errorf("could not resolve Rancher version: %w", err)
 			}
@@ -149,29 +150,29 @@ func newResolveCmd() *cobra.Command {
 				if autoResolved {
 					switch {
 					case requestedVersion == "" && commit != "":
-						printInfo("Resolved v%s from commit %s (channel: %s)", rancherVersion, commit, normalizedChannel)
+						PrintInfo("Resolved v%s from commit %s (channel: %s)", rancherVersion, commit, normalizedChannel)
 					case requestedVersion == "":
-						printInfo("Auto-resolved latest Rancher version: v%s (channel: %s)", rancherVersion, normalizedChannel)
+						PrintInfo("Auto-resolved latest Rancher version: v%s (channel: %s)", rancherVersion, normalizedChannel)
 					default:
-						printInfo("Auto-resolved v%s from requested %s (channel: %s)", rancherVersion, requestedVersion, normalizedChannel)
+						PrintInfo("Auto-resolved v%s from requested %s (channel: %s)", rancherVersion, requestedVersion, normalizedChannel)
 					}
 					fmt.Println()
 				}
-				printStep(1, "Fetching Rancher support matrix")
-				printInfo("Rancher v%s supports: %s",
+				PrintStep(1, "Fetching Rancher support matrix")
+				PrintInfo("Rancher v%s supports: %s",
 					rancherVersion, strings.Join(matrix.SupportedMinors(), ", "))
 
-				printStep(2, "Resolving Kubernetes version")
-				printInfo("Resolved k8s: %s", resolvedK8s)
+				PrintStep(2, "Resolving Kubernetes version")
+				PrintInfo("Resolved k8s: %s", resolvedK8s)
 
-				printStep(3, "Resolving cluster version")
-				printInfo("Resolved %s version: %s", mode, clusterVer)
+				PrintStep(3, "Resolving cluster version")
+				PrintInfo("Resolved %s version: %s", mode, clusterVer)
 
-				printStep(4, "Prerelease status")
+				PrintStep(4, "Prerelease status")
 				if isPrerelease {
-					printInfo("Version %s is a prerelease", rancherVersion)
+					PrintInfo("Version %s is a prerelease", rancherVersion)
 				} else {
-					printInfo("Version %s is a stable release", rancherVersion)
+					PrintInfo("Version %s is a stable release", rancherVersion)
 				}
 
 				fmt.Println()

@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mallardduck/rancher-deployer/internal/cli"
 	"github.com/mallardduck/rancher-deployer/internal/selfupdate"
 	"github.com/mallardduck/rancher-deployer/internal/version"
 )
@@ -61,17 +62,17 @@ func runSelfUpdate(f *selfUpdateFlags) error {
 		return fmt.Errorf("check for update: %w", err)
 	}
 	if !res.UpdateAvailable {
-		printSuccess("Already up to date.")
+		cli.PrintSuccess("Already up to date.")
 		return nil
 	}
 
 	if skip := u.CanApply(); skip != nil {
-		printInfo("%s is available — %s", displayVersion(res.Latest), skip.Hint)
+		cli.PrintInfo("%s is available — %s", displayVersion(res.Latest), skip.Hint)
 		return nil
 	}
 
 	if f.check {
-		printInfo("%s is available. Run without --check to apply it.", displayVersion(res.Latest))
+		cli.PrintInfo("%s is available. Run without --check to apply it.", displayVersion(res.Latest))
 		return nil
 	}
 
@@ -79,7 +80,7 @@ func runSelfUpdate(f *selfUpdateFlags) error {
 		fmt.Printf("\n%s\n\n", res.Release.Notes)
 	}
 
-	if !f.yes && !promptConfirm(fmt.Sprintf("Update to %s?", displayVersion(res.Latest))) {
+	if !f.yes && !cli.PromptConfirm(fmt.Sprintf("Update to %s?", displayVersion(res.Latest))) {
 		fmt.Println("Aborted.")
 		return nil
 	}
@@ -89,11 +90,11 @@ func runSelfUpdate(f *selfUpdateFlags) error {
 		return fmt.Errorf("apply update: %w", err)
 	}
 	if applied.Skipped != nil {
-		printInfo("Not applied: %s", applied.Skipped.Hint)
+		cli.PrintInfo("Not applied: %s", applied.Skipped.Hint)
 		return nil
 	}
 
-	printSuccess("Updated to %s.", displayVersion(applied.Version))
+	cli.PrintSuccess("Updated to %s.", displayVersion(applied.Version))
 	return nil
 }
 
