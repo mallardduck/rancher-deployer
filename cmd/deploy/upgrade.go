@@ -1,12 +1,16 @@
 package deploy
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mallardduck/rancher-deployer/internal/cli"
+	"github.com/mallardduck/rancher-deployer/internal/detect"
+	"github.com/mallardduck/rancher-deployer/internal/expose"
 	"github.com/mallardduck/rancher-deployer/internal/helm"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
 	"github.com/mallardduck/rancher-deployer/internal/kubectl"
@@ -20,6 +24,9 @@ type upgradeFlags struct {
 	channel        string
 	commit         string // head channel only — pin to a specific head build
 	valuesFile     string
+	expose         string // "" keeps the release's current exposure
+	hostname       string
+	mode           string
 	failurePolicy  string
 	helmSet        []string
 	prime          bool
@@ -55,6 +62,9 @@ func newUpgradeCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&f.prime, "prime", false, "Use Rancher Prime chart")
 	cmd.Flags().StringVar(&f.channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha, head (continuously-published head builds — requires a minor, e.g. --rancher-version 2.15)")
 	cmd.Flags().StringVar(&f.commit, "commit", "", "Pin --channel head to the head build whose commit starts with this (instead of the newest one) — e.g. to reproduce a bug reported against a specific build")
+	cmd.Flags().StringVar(&f.expose, "expose", "", "Change how Rancher is reached: sslip or pangolin (default: keep the release's current hostname and TLS settings)")
+	cmd.Flags().StringVar(&f.hostname, "hostname", "", "Hostname for Rancher ingress (only with --expose)")
+	cmd.Flags().StringVar(&f.mode, "mode", "", "Cluster type, used by --expose to configure ingress: k3s, k3d or existing (default: auto-detect)")
 	cmd.Flags().StringVar(&f.valuesFile, "values-file", "", "Path to YAML file with additional Helm values")
 	cmd.Flags().StringArrayVar(&f.helmSet, "set", nil, "Override Helm chart value (repeatable): --set key=value")
 	cmd.Flags().BoolVar(&f.dryRun, "dry-run", false, "Print resolved plan without executing")
@@ -76,6 +86,16 @@ func runUpgrade(f *upgradeFlags) error {
 	failurePolicy, err := rancher.ParseFailurePolicy(f.failurePolicy)
 	if err != nil {
 		return err
+	}
+
+	if f.expose == "" && f.hostname != "" {
+		return fmt.Errorf("--hostname requires --expose on upgrade; use --set hostname=... to change the hostname alone")
+	}
+	var exposeMode expose.Mode
+	if f.expose != "" {
+		if exposeMode, err = expose.New(f.expose); err != nil {
+			return err
+		}
 	}
 
 	// --rancher-version is required, except for the one case where a commit
@@ -184,10 +204,26 @@ func runUpgrade(f *upgradeFlags) error {
 		SetFlags:      f.helmSet,
 		FailurePolicy: failurePolicy,
 	}
+	var exposePlan *cli.ExposePlan
+	if exposeMode != nil {
+		clusterMode, _, modeErr := detect.ResolveMode(f.mode)
+		if modeErr != nil {
+			return modeErr
+		}
+		exposePlan, err = cli.NewExposePlan(exposeMode, f.hostname, f.helmSet, expose.Env{ClusterMode: clusterMode, Namespace: f.namespace})
+		if err != nil {
+			return err
+		}
+		helmValues.SetFlags = exposePlan.Exposure.MergeSets(f.helmSet)
+		helmValues.Hostname = exposePlan.Exposure.Hostname
+		if !hasSetKey(helmValues.SetFlags, "hostname") {
+			helmValues.SetFlags = append(helmValues.SetFlags, "hostname="+exposePlan.Exposure.Hostname)
+		}
+	}
 	if f.valuesFile != "" {
 		cli.PrintInfo("  --values %s", f.valuesFile)
 	}
-	for _, s := range f.helmSet {
+	for _, s := range helmValues.SetFlags {
 		cli.PrintInfo("  --set %s", s)
 	}
 
@@ -196,6 +232,9 @@ func runUpgrade(f *upgradeFlags) error {
 	printUpgradePlan(f, currentVersion, clusterK8s, cli.KDMLine(matrix, kdmFlavor, usedFallbackKDM), chartRef)
 
 	if f.dryRun {
+		if exposePlan != nil {
+			exposePlan.PrintDryRun()
+		}
 		fmt.Println()
 		cli.PrintWarning("Dry run — no changes made.")
 		return nil
@@ -205,6 +244,15 @@ func runUpgrade(f *upgradeFlags) error {
 	if !f.yes && !cli.PromptConfirm("Proceed with upgrade?") {
 		fmt.Println("Aborted.")
 		return nil
+	}
+
+	if exposePlan != nil {
+		if err := cli.RunExposeSteps(context.Background(), exposePlan.Steps, f.yes, os.Stdin); err != nil {
+			return err
+		}
+		if err := exposePlan.ApplyConfig(); err != nil {
+			return err
+		}
 	}
 
 	// ── Step 7: Ensure Helm repo ─────────────────────────────────────────────
@@ -223,6 +271,10 @@ func runUpgrade(f *upgradeFlags) error {
 	cli.PrintStep(9, "Waiting for Rancher to become ready")
 	if err := helmBackend.WaitReady(f.namespace); err != nil {
 		return err
+	}
+
+	if exposePlan != nil {
+		exposePlan.Verify(context.Background())
 	}
 
 	fmt.Println()
@@ -253,4 +305,13 @@ func printUpgradePlan(f *upgradeFlags, currentVersion, clusterK8s, kdmVer string
 		fmt.Printf("  Mode             : DRY RUN\n")
 	}
 	fmt.Printf("%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", cli.ColorCyan, cli.ColorReset)
+}
+
+func hasSetKey(sets []string, key string) bool {
+	for _, s := range sets {
+		if strings.HasPrefix(s, key+"=") {
+			return true
+		}
+	}
+	return false
 }
