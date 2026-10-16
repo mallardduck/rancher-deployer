@@ -378,7 +378,7 @@ docker run -d --privileged \
 
 ### Combining Environment Variables with Direct Args
 
-Environment variables are processed first, then any additional `rancher-deployer` flags passed directly to the container are appended:
+Environment variables are processed first, then any additional `rancher-demo deploy` flags passed directly to the container are appended:
 
 ```bash
 docker run -d --privileged \
@@ -548,6 +548,6 @@ The `rancher-demo` image contains:
 - **kubectl** (Kubernetes CLI)
 - **helm** (Kubernetes package manager)
 - **k9s** (interactive cluster management)
-- **rancher-deployer** (CLI that orchestrates everything)
+- **rancher-demo** (CLI that resolves versions and orchestrates the deployment)
 
 All running in a single, self-contained container.

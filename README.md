@@ -55,7 +55,7 @@ rancher-deployer self-update
 
 `deploy` also needs `helm`, `kubectl`, and `k3s` or `k3d` on your `PATH`; run
 `rancher-deployer doctor` to check. For checksum verification, building from source, and
-the full prerequisites list, see the [Installation guide](docs/install.md).
+the full prerequisites list, see the [Installation guide](docs/deployer/install.md).
 
 ## Quick start
 
@@ -84,15 +84,15 @@ rancher-deployer teardown
 | `doctor`      | Check that required tools are available |
 | `self-update` | Update the `rancher-deployer` binary itself |
 
-Flags and details are in [Commands](docs/commands.md).
+Flags and details are in [Commands](docs/deployer/commands.md).
 
 ## Documentation
 
-- [Installation](docs/install.md)
-- [Commands](docs/commands.md)
-- [Examples](docs/examples.md)
-- [Helm values](docs/helm-values.md)
-- [Idempotency & cleanup](docs/idempotency-and-cleanup.md)
+- [Installation](docs/deployer/install.md)
+- [Commands](docs/deployer/commands.md)
+- [Examples](docs/deployer/examples.md)
+- [Helm values](docs/deployer/helm-values.md)
+- [Idempotency & cleanup](docs/deployer/idempotency-and-cleanup.md)
 - [Roadmap](docs/roadmap.md)
 - [Design decisions](docs/decisions/)
 - [Demo image](docs/demo/README.md)
