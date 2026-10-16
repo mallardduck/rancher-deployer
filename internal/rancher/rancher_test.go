@@ -866,3 +866,26 @@ func containsSetFlag(flags []string, target string) bool {
 	}
 	return false
 }
+
+func TestFormatPodStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		deployOut string
+		podOut    string
+		want      string
+	}{
+		{"no deployment yet", "", "", "Waiting for deployment to be created..."},
+		{"malformed counts", "3/2", "", "Deployment initializing..."},
+		{"ready unset defaults to zero", "3//", "", "Pods: 0/3 ready"},
+		{"all ready", "3/3/3", "rancher-a 1/1 Running 0 1m", "Pods: 3/3 ready"},
+		{"pulling images", "3/0/0", "rancher-a 0/1 ContainerCreating 0 5s", "Pods: 0/3 ready (pulling images)"},
+		{"init containers", "3/0/0", "rancher-a 0/1 Init:0/1 0 5s", "Pods: 0/3 ready (initializing)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatPodStatus(tt.deployOut, tt.podOut); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

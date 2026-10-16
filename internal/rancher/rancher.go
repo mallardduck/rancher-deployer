@@ -18,6 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
+	"github.com/mallardduck/rancher-deployer/internal/kubectl"
 	"github.com/mallardduck/rancher-deployer/internal/runner"
 )
 
@@ -739,9 +740,7 @@ func ResolveCertManagerVersion() (string, error) {
 // its deployments to roll out.
 func InstallCertManager(version string) error {
 	// Check if already installed — fail loud
-	out, _ := runner.Output("kubectl", "get", "namespace", "cert-manager",
-		"--ignore-not-found", "-o", "name")
-	if strings.Contains(out, "cert-manager") {
+	if exists, _ := kubectl.Exists("namespace", "cert-manager", ""); exists {
 		return fmt.Errorf(
 			"cert-manager namespace already exists\n" +
 				"  Re-runs are not supported. Remove cert-manager before retrying",
@@ -752,7 +751,7 @@ func InstallCertManager(version string) error {
 		"https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml",
 		version,
 	)
-	if err := runner.Kubectl("apply", "-f", url); err != nil {
+	if err := kubectl.ApplyURL(url); err != nil {
 		return fmt.Errorf("failed to apply cert-manager: %w", err)
 	}
 
@@ -760,11 +759,7 @@ func InstallCertManager(version string) error {
 	// ready before Rancher's Helm install can succeed — it validates CRDs and
 	// will 503 if the endpoint isn't up yet.
 	for _, deploy := range []string{"cert-manager", "cert-manager-cainjector", "cert-manager-webhook"} {
-		if err := runner.Kubectl("rollout", "status",
-			"deployment/"+deploy,
-			"-n", "cert-manager",
-			"--timeout=120s",
-		); err != nil {
+		if err := kubectl.RolloutStatus("cert-manager", deploy, 120*time.Second); err != nil {
 			return fmt.Errorf("cert-manager deployment %q did not become ready: %w", deploy, err)
 		}
 	}
@@ -844,7 +839,7 @@ func Install(namespace string, chart Chart, values HelmValues) error {
 	}
 
 	// Create namespace
-	if err := runner.Kubectl("create", "namespace", namespace); err != nil {
+	if err := kubectl.CreateNamespace(namespace); err != nil {
 		return fmt.Errorf("namespace creation failed: %w", err)
 	}
 
@@ -894,11 +889,7 @@ func WaitReady(namespace string) error {
 
 	// Run rollout status in background
 	go func() {
-		done <- runner.Kubectl("rollout", "status",
-			"deployment/rancher",
-			"-n", namespace,
-			"--timeout=600s",
-		)
+		done <- kubectl.RolloutStatus(namespace, "rancher", 600*time.Second)
 	}()
 
 	lastStatus := ""
@@ -925,16 +916,23 @@ func WaitReady(namespace string) error {
 
 // getPodStatus returns a human-readable summary of Rancher pod status.
 func getPodStatus(namespace string) string {
-	// Get deployment status
-	out, err := runner.Output("kubectl", "get", "deployment", "rancher",
-		"-n", namespace,
-		"-o", "jsonpath={.status.replicas}/{.status.readyReplicas}/{.status.availableReplicas}",
-	)
-	if err != nil || out == "" {
+	deployOut, err := kubectl.JSONPath("deployment", "rancher", namespace,
+		".status.replicas}/{.status.readyReplicas}/{.status.availableReplicas")
+	if err != nil {
+		deployOut = ""
+	}
+	podOut, _ := kubectl.PodsTable(namespace, "app=rancher")
+	return formatPodStatus(deployOut, podOut)
+}
+
+// formatPodStatus builds the progress line from the deployment's
+// "replicas/ready/available" counts and the pod table (STATUS in column 3).
+func formatPodStatus(deployOut, podOut string) string {
+	if deployOut == "" {
 		return "Waiting for deployment to be created..."
 	}
 
-	parts := strings.Split(out, "/")
+	parts := strings.Split(deployOut, "/")
 	if len(parts) < 3 {
 		return "Deployment initializing..."
 	}
@@ -945,13 +943,6 @@ func getPodStatus(namespace string) string {
 	if ready == "" {
 		ready = "0"
 	}
-
-	// Also get pod phase info for more detail
-	podOut, _ := runner.Output("kubectl", "get", "pods",
-		"-n", namespace,
-		"-l", "app=rancher",
-		"--no-headers",
-	)
 
 	var detail string
 	if podOut != "" {
@@ -996,27 +987,6 @@ func InstalledVersion(namespace string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("rancher is not installed in namespace %q — nothing to upgrade", namespace)
-}
-
-// ClusterK8sVersion returns the server-side k8s version (e.g. "v1.28.10+k3s1").
-func ClusterK8sVersion() (string, error) {
-	out, err := runner.Output("kubectl", "version", "-o", "json")
-	if err != nil {
-		return "", fmt.Errorf("could not query cluster version: %w", err)
-	}
-
-	var v struct {
-		ServerVersion struct {
-			GitVersion string `json:"gitVersion"`
-		} `json:"serverVersion"`
-	}
-	if err := json.Unmarshal([]byte(out), &v); err != nil {
-		return "", fmt.Errorf("could not parse kubectl version output: %w", err)
-	}
-	if v.ServerVersion.GitVersion == "" {
-		return "", fmt.Errorf("kubectl version returned an empty server version")
-	}
-	return v.ServerVersion.GitVersion, nil
 }
 
 // Upgrade runs helm upgrade for an existing Rancher installation.

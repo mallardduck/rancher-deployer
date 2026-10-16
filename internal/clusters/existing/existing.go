@@ -3,12 +3,12 @@ package existing
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/mallardduck/rancher-deployer/internal/doctor"
 	"github.com/mallardduck/rancher-deployer/internal/helm"
+	"github.com/mallardduck/rancher-deployer/internal/kubectl"
 	"github.com/mallardduck/rancher-deployer/internal/provider"
 	"github.com/mallardduck/rancher-deployer/internal/runner"
 )
@@ -100,27 +100,9 @@ func (p *Provider) Checkers() []doctor.Checker {
 
 // ── cluster validation ────────────────────────────────────────────────────────
 
-type kubectlVersionOutput struct {
-	ServerVersion *versionInfo `json:"serverVersion"`
-}
-
-type versionInfo struct {
-	GitVersion string `json:"gitVersion"`
-}
-
 // rawServerVersion returns the unmodified server gitVersion string, including
 // any distro suffix (e.g. "v1.28.10+k3s1", "v1.29.4+rke2r1").
-func rawServerVersion() (string, error) {
-	out, err := runner.Output("kubectl", "version", "--output=json")
-	if err != nil {
-		return "", fmt.Errorf("could not query cluster version: %w", err)
-	}
-	var v kubectlVersionOutput
-	if err := json.Unmarshal([]byte(out), &v); err != nil || v.ServerVersion == nil {
-		return "", fmt.Errorf("could not parse kubectl version output")
-	}
-	return v.ServerVersion.GitVersion, nil
-}
+func rawServerVersion() (string, error) { return kubectl.ServerVersion() }
 
 // validateCluster checks that kubectl can reach the cluster and returns the k8s version.
 func validateCluster() (string, error) {
@@ -128,15 +110,11 @@ func validateCluster() (string, error) {
 		return "", fmt.Errorf("kubectl not found: %w\nPlease ensure kubectl is installed and configured", err)
 	}
 
-	out, err := runner.Output("kubectl", "version", "--output=json")
+	raw, err := kubectl.ServerVersion()
 	if err != nil {
 		return "", fmt.Errorf("cannot reach Kubernetes cluster via kubectl: %w\nPlease ensure KUBECONFIG is set correctly and the cluster is accessible", err)
 	}
-
-	version := extractVersion(out)
-	if version == "" {
-		return "", fmt.Errorf("could not parse Kubernetes version from kubectl output:\n%s", out)
-	}
+	version := kubectl.BaseVersion(raw)
 
 	fmt.Printf("  Kubernetes cluster found: %s\n", version)
 	return version, nil
@@ -162,23 +140,6 @@ func validateVersion(clusterVersion, expectedVersion string) error {
 
 	fmt.Printf("  Kubernetes version validated: %s matches required %s\n", clusterVersion, expectedVersion)
 	return nil
-}
-
-// extractVersion parses the base k8s version from kubectl version JSON output,
-// stripping any distro suffix (e.g. "v1.28.10+k3s1" → "v1.28.10").
-func extractVersion(output string) string {
-	var v kubectlVersionOutput
-	if err := json.Unmarshal([]byte(output), &v); err != nil || v.ServerVersion == nil {
-		return ""
-	}
-	full := v.ServerVersion.GitVersion
-	if full == "" {
-		return ""
-	}
-	if i := strings.Index(full, "+"); i != -1 {
-		return full[:i]
-	}
-	return full
 }
 
 // extractMinor returns the "major.minor" portion of a version string.

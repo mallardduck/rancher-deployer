@@ -8,6 +8,7 @@ import (
 
 	"github.com/mallardduck/rancher-deployer/internal/cli"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
+	"github.com/mallardduck/rancher-deployer/internal/kubectl"
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
 	"github.com/mallardduck/rancher-deployer/internal/upgrade"
 )
@@ -117,7 +118,7 @@ func runUpgrade(f *upgradeFlags) error {
 
 	// ── Step 4: Fetch support matrix for target version ───────────────────────
 	cli.PrintStep(4, "Fetching support matrix for Rancher v"+chartRef.Version)
-	clusterK8s, err := rancher.ClusterK8sVersion()
+	clusterK8s, err := kubectl.ServerVersion()
 	if err != nil {
 		return err
 	}
