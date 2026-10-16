@@ -687,56 +687,6 @@ func TestInjectHostname(t *testing.T) {
 	}
 }
 
-// ── resolveHostname ───────────────────────────────────────────────────────────
-
-func TestResolveHostname(t *testing.T) {
-	tests := []struct {
-		name     string
-		explicit string
-		setFlags []string
-		wantErr  bool
-		contains string // substring that should be in the result
-	}{
-		{
-			name:     "explicit hostname takes precedence",
-			explicit: "rancher.example.com",
-			setFlags: []string{"hostname=other.com"},
-			wantErr:  false,
-			contains: "rancher.example.com",
-		},
-		{
-			name:     "use hostname from set flags",
-			explicit: "",
-			setFlags: []string{"foo=bar", "hostname=from-set.com"},
-			wantErr:  false,
-			contains: "from-set.com",
-		},
-		{
-			name:     "auto-detect when no explicit or set hostname",
-			explicit: "",
-			setFlags: []string{"foo=bar"},
-			wantErr:  false,
-			contains: ".sslip.io", // should auto-generate sslip.io hostname
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolveHostname(tt.explicit, tt.setFlags)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("resolveHostname() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got == "" {
-				t.Error("resolveHostname() returned empty string")
-			}
-			if tt.contains != "" && !contains(got, tt.contains) {
-				t.Errorf("resolveHostname() = %q, want to contain %q", got, tt.contains)
-			}
-		})
-	}
-}
-
 // ── BuildHelmValues ───────────────────────────────────────────────────────────
 
 func TestBuildHelmValues(t *testing.T) {

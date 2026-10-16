@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mallardduck/rancher-deployer/internal/cli"
+	"github.com/mallardduck/rancher-deployer/internal/expose"
 	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
@@ -53,6 +54,7 @@ type Options struct {
 	Channel           string
 	Commit            string // head channel only — pin to a specific head build
 	Hostname          string
+	Expose            string // how Rancher is reached; "" means sslip
 	Namespace         string
 	ValuesFile        string
 	BootstrapPassword string
@@ -71,6 +73,11 @@ func Run(ctx context.Context, f Options) error {
 	f.RancherVersion = strings.TrimPrefix(f.RancherVersion, "v")
 
 	channel, err := rancher.NormaliseChannel(f.Channel)
+	if err != nil {
+		return err
+	}
+
+	exposeMode, err := expose.New(f.Expose)
 	if err != nil {
 		return err
 	}
@@ -183,7 +190,11 @@ func Run(ctx context.Context, f Options) error {
 
 	// ── Step 7: Build Helm values ────────────────────────────────────────────
 	cli.PrintStep(7, "Building Helm values")
-	helmValues, err := rancher.BuildHelmValues(f.ValuesFile, f.HelmSet, f.Hostname, f.Namespace, f.BootstrapPassword)
+	exposure, err := expose.Resolve(exposeMode, f.Hostname, f.HelmSet)
+	if err != nil {
+		return err
+	}
+	helmValues, err := rancher.BuildHelmValues(f.ValuesFile, exposure.MergeSets(f.HelmSet), exposure.Hostname, f.Namespace, f.BootstrapPassword)
 	if err != nil {
 		return err
 	}
