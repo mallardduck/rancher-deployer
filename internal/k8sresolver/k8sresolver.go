@@ -28,11 +28,11 @@ const (
 
 // releasesCache is the on-disk cache format.
 type releasesCache struct {
-	FetchedAt time.Time   `json:"fetched_at"`
-	Releases  []ghRelease `json:"releases"`
+	FetchedAt time.Time `json:"fetched_at"`
 	// OldestMinor is the "MAJOR.MINOR" of the oldest cached release. Pagination
 	// may stop early, so the cache only covers targets at or above this minor.
-	OldestMinor string `json:"oldest_minor,omitempty"`
+	OldestMinor string      `json:"oldest_minor,omitempty"`
+	Releases    []ghRelease `json:"releases"`
 	// Complete is true when pagination ran to the end (or k3sMaxPages), so the
 	// cache covers every minor.
 	Complete bool `json:"complete,omitempty"`
