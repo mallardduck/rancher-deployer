@@ -95,10 +95,10 @@ func runDoctor(flags *doctorFlags) error {
 	results := d.RunAll(ctx)
 
 	// Group and display results by category
-	displayResults(results)
+	cli.DisplayDoctorResults(results)
 
 	// Summary
-	passed, warned, failed := countResults(results)
+	passed, warned, failed := cli.CountDoctorResults(results)
 	fmt.Println()
 	cli.PrintInfo("Summary: %d passed, %d warnings, %d failed", passed, warned, failed)
 
@@ -117,72 +117,4 @@ func runDoctor(flags *doctorFlags) error {
 	}
 
 	return nil
-}
-
-func displayResults(results []doctor.CheckResult) {
-	categories := []struct {
-		key   string
-		title string
-	}{
-		{"dependencies", "Binary Dependencies"},
-		{"environment", "Runtime Environment"},
-		{"configuration", "Configuration"},
-		{"network", "Network Connectivity"},
-		{"state", "Installation State"},
-	}
-
-	for _, cat := range categories {
-		catResults := filterByCategory(results, cat.key)
-		if len(catResults) == 0 {
-			continue
-		}
-
-		fmt.Println()
-		fmt.Printf("%s%s%s%s\n", cli.ColorBold, cli.ColorCyan, cat.title, cli.ColorReset)
-
-		for _, r := range catResults {
-			displayResult(r)
-		}
-	}
-}
-
-func displayResult(r doctor.CheckResult) {
-	switch r.Status {
-	case doctor.StatusPass:
-		fmt.Printf("  %s✔%s %s: %s\n", cli.ColorGreen, cli.ColorReset, r.Name, r.Message)
-	case doctor.StatusWarn:
-		fmt.Printf("  %s⚠%s %s: %s\n", cli.ColorYellow, cli.ColorReset, r.Name, r.Message)
-		if r.Remediation != "" {
-			fmt.Printf("    %s→%s %s\n", cli.ColorYellow, cli.ColorReset, r.Remediation)
-		}
-	case doctor.StatusFail:
-		fmt.Printf("  %s✗%s %s: %s\n", cli.ColorRed, cli.ColorReset, r.Name, r.Message)
-		if r.Remediation != "" {
-			fmt.Printf("    %s→%s %s\n", cli.ColorRed, cli.ColorReset, r.Remediation)
-		}
-	}
-}
-
-func filterByCategory(results []doctor.CheckResult, category string) []doctor.CheckResult {
-	filtered := make([]doctor.CheckResult, 0)
-	for _, r := range results {
-		if r.Category == category {
-			filtered = append(filtered, r)
-		}
-	}
-	return filtered
-}
-
-func countResults(results []doctor.CheckResult) (passed, warned, failed int) {
-	for _, r := range results {
-		switch r.Status {
-		case doctor.StatusPass:
-			passed++
-		case doctor.StatusWarn:
-			warned++
-		case doctor.StatusFail:
-			failed++
-		}
-	}
-	return
 }
