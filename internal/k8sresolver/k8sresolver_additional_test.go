@@ -223,3 +223,51 @@ func sign(n int) int {
 	}
 	return 0
 }
+
+// ── release cache coverage ────────────────────────────────────────────────────
+
+func TestLoadCacheCoverage(t *testing.T) {
+	tests := []struct {
+		name    string
+		cache   releasesCache
+		target  string
+		want    bool
+		expired bool
+	}{
+		{"covers target", releasesCache{OldestMinor: "1.27"}, "1.28", true, false},
+		{"covers exact oldest minor", releasesCache{OldestMinor: "1.28"}, "1.28", true, false},
+		{"shallower cache is a miss", releasesCache{OldestMinor: "1.31"}, "1.28", false, false},
+		{"complete cache covers any minor", releasesCache{Complete: true, OldestMinor: "1.31"}, "1.20", true, false},
+		{"legacy cache without coverage is a miss", releasesCache{}, "1.28", false, false},
+		{"empty target needs complete cache", releasesCache{OldestMinor: "1.20"}, "", false, false},
+		{"expired cache is a miss", releasesCache{Complete: true}, "1.28", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			t.Setenv("HOME", tmp)
+			t.Setenv("XDG_CACHE_HOME", filepath.Join(tmp, ".cache"))
+
+			tt.cache.FetchedAt = time.Now()
+			if tt.expired {
+				tt.cache.FetchedAt = time.Now().Add(-2 * cacheTTL)
+			}
+			tt.cache.Releases = []ghRelease{{TagName: "v1.28.10+k3s1"}}
+			path, err := cacheFilePath()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			data, _ := json.Marshal(tt.cache)
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, got := loadCache(tt.target); got != tt.want {
+				t.Errorf("loadCache(%q) hit = %v, want %v", tt.target, got, tt.want)
+			}
+		})
+	}
+}
