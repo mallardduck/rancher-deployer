@@ -238,3 +238,36 @@ func TestCheckResult_Categories(t *testing.T) {
 		}
 	}
 }
+
+func TestNewDemoDoctor(t *testing.T) {
+	names := func(d *Doctor) map[string]bool {
+		m := make(map[string]bool)
+		for _, c := range d.checkers {
+			m[c.Name()] = true
+		}
+		return m
+	}
+
+	t.Run("excludes deployer-only checks", func(t *testing.T) {
+		got := names(NewDemoDoctor(nil))
+		for _, name := range []string{"k3s install script", "k3d install script", "Rancher installation"} {
+			if got[name] {
+				t.Errorf("demo doctor should not include %q", name)
+			}
+		}
+		for _, name := range []string{"Rancher releases", "GitHub API", "Kubernetes cluster access"} {
+			if !got[name] {
+				t.Errorf("demo doctor should include %q", name)
+			}
+		}
+	})
+
+	t.Run("skip flags", func(t *testing.T) {
+		d := NewDemoDoctor(&CheckOptions{SkipNetwork: true, SkipState: true})
+		for _, c := range d.checkers {
+			if cat := c.Category(); cat == "network" || cat == "state" {
+				t.Errorf("unexpected %s checker %q with skip flags set", cat, c.Name())
+			}
+		}
+	})
+}

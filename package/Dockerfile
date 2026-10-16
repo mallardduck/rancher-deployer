@@ -5,17 +5,25 @@
 #   - rancher-demo: Full deployment stack (uses k3s helm-controller, no helm CLI)
 
 # ============================================================================
-# Stage: Go builder for rancher-deployer binary
+# Stage: Go builder for the rancher-demo binary
 # ============================================================================
 FROM rancher/hardened-build-base:v1.26.4b1 AS go-builder
 # TARGETARCH is automatically provided by buildx for multi-platform builds
 ARG TARGETARCH
+# Build metadata reported by `rancher-demo version` (.git is not in the build context)
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG DATE=unknown
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
-    go build -ldflags="-w -s" -o rancher-deployer .
+    go build -ldflags="-w -s \
+      -X github.com/mallardduck/rancher-deployer/internal/version.Version=${VERSION} \
+      -X github.com/mallardduck/rancher-deployer/internal/version.Commit=${COMMIT} \
+      -X github.com/mallardduck/rancher-deployer/internal/version.Date=${DATE}" \
+    -o rancher-demo ./cmd/demo
 
 # ============================================================================
 # Stage: BCI micro base
@@ -126,9 +134,9 @@ EXPOSE 6443
 # ============================================================================
 FROM k3s-base AS rancher-demo
 
-# Copy rancher-deployer binary from builder
-COPY --from=go-builder /build/rancher-deployer /usr/local/bin/rancher-deployer
-RUN chmod +x /usr/local/bin/rancher-deployer
+# Copy rancher-demo binary from builder
+COPY --from=go-builder /build/rancher-demo /usr/local/bin/rancher-demo
+RUN chmod +x /usr/local/bin/rancher-demo
 
 # Add debug scripts (kubectl-only, no helm dependency)
 COPY package/debug-cert-manager.sh /usr/local/bin/debug-cert-manager
@@ -141,7 +149,7 @@ ENV CATTLE_K3S_VERSION=""
 ENV HOSTNAME=rancher-local
 ENV CATTLE_NAMESPACE=cattle-system
 
-# Copy rancher-deployer wrapper entrypoint
+# Copy rancher-demo wrapper entrypoint
 COPY package/rancher-entrypoint.sh /rancher-entrypoint.sh
 RUN chmod +x /rancher-entrypoint.sh
 

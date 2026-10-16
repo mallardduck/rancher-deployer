@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mallardduck/rancher-deployer/internal/cli"
 	"github.com/mallardduck/rancher-deployer/internal/detect"
 	"github.com/mallardduck/rancher-deployer/internal/doctor"
 )
@@ -61,7 +62,7 @@ Exit codes:
 }
 
 func runDoctor(flags *doctorFlags) error {
-	printBanner()
+	cli.PrintBanner("Deployer")
 
 	// Prepare options
 	opts := &doctor.CheckOptions{
@@ -94,94 +95,26 @@ func runDoctor(flags *doctorFlags) error {
 	results := d.RunAll(ctx)
 
 	// Group and display results by category
-	displayResults(results)
+	cli.DisplayDoctorResults(results)
 
 	// Summary
-	passed, warned, failed := countResults(results)
+	passed, warned, failed := cli.CountDoctorResults(results)
 	fmt.Println()
-	printInfo("Summary: %d passed, %d warnings, %d failed", passed, warned, failed)
+	cli.PrintInfo("Summary: %d passed, %d warnings, %d failed", passed, warned, failed)
 
 	// Final message and exit
 	fmt.Println()
 	if doctor.HasCriticalFailures(results) {
-		printWarning("Critical checks failed. Please address the errors above before deploying.")
+		cli.PrintWarning("Critical checks failed. Please address the errors above before deploying.")
 		// Return error to exit with code 1 (but avoid os.Exit to allow defers to run)
 		return fmt.Errorf("health check failed")
 	}
 
 	if warned > 0 {
-		printInfo("Your system has some warnings but is ready to deploy.")
+		cli.PrintInfo("Your system has some warnings but is ready to deploy.")
 	} else {
-		printSuccess("Your system is ready to deploy Rancher!")
+		cli.PrintSuccess("Your system is ready to deploy Rancher!")
 	}
 
 	return nil
-}
-
-func displayResults(results []doctor.CheckResult) {
-	categories := []struct {
-		key   string
-		title string
-	}{
-		{"dependencies", "Binary Dependencies"},
-		{"environment", "Runtime Environment"},
-		{"configuration", "Configuration"},
-		{"network", "Network Connectivity"},
-		{"state", "Installation State"},
-	}
-
-	for _, cat := range categories {
-		catResults := filterByCategory(results, cat.key)
-		if len(catResults) == 0 {
-			continue
-		}
-
-		fmt.Println()
-		fmt.Printf("%s%s%s%s\n", colorBold, colorCyan, cat.title, colorReset)
-
-		for _, r := range catResults {
-			displayResult(r)
-		}
-	}
-}
-
-func displayResult(r doctor.CheckResult) {
-	switch r.Status {
-	case doctor.StatusPass:
-		fmt.Printf("  %s✔%s %s: %s\n", colorGreen, colorReset, r.Name, r.Message)
-	case doctor.StatusWarn:
-		fmt.Printf("  %s⚠%s %s: %s\n", colorYellow, colorReset, r.Name, r.Message)
-		if r.Remediation != "" {
-			fmt.Printf("    %s→%s %s\n", colorYellow, colorReset, r.Remediation)
-		}
-	case doctor.StatusFail:
-		fmt.Printf("  %s✗%s %s: %s\n", colorRed, colorReset, r.Name, r.Message)
-		if r.Remediation != "" {
-			fmt.Printf("    %s→%s %s\n", colorRed, colorReset, r.Remediation)
-		}
-	}
-}
-
-func filterByCategory(results []doctor.CheckResult, category string) []doctor.CheckResult {
-	filtered := make([]doctor.CheckResult, 0)
-	for _, r := range results {
-		if r.Category == category {
-			filtered = append(filtered, r)
-		}
-	}
-	return filtered
-}
-
-func countResults(results []doctor.CheckResult) (passed, warned, failed int) {
-	for _, r := range results {
-		switch r.Status {
-		case doctor.StatusPass:
-			passed++
-		case doctor.StatusWarn:
-			warned++
-		case doctor.StatusFail:
-			failed++
-		}
-	}
-	return
 }

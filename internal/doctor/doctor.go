@@ -72,10 +72,8 @@ type Doctor struct {
 	checkers []Checker
 }
 
-// NewDoctor creates a new Doctor with the given checkers.
-// providerCheckers should come from provider.Checkers() and supply all
-// binary/runtime prerequisite checks for the active deployment mode.
-func NewDoctor(opts *CheckOptions, providerCheckers ...Checker) *Doctor {
+// newDoctor applies option defaults and returns an empty Doctor.
+func newDoctor(opts *CheckOptions) *Doctor {
 	if opts == nil {
 		opts = &CheckOptions{}
 	}
@@ -87,14 +85,21 @@ func NewDoctor(opts *CheckOptions, providerCheckers ...Checker) *Doctor {
 		opts.NetworkTimeout = 10 * time.Second
 	}
 
-	mode := opts.Mode
-	if mode == "" {
-		mode, _ = detect.InstallMode()
-	}
-
-	d := &Doctor{
+	return &Doctor{
 		checkers: make([]Checker, 0),
 		opts:     opts,
+	}
+}
+
+// NewDoctor creates a new Doctor with the full rancher-deployer check set.
+// providerCheckers should come from provider.Checkers() and supply all
+// binary/runtime prerequisite checks for the active deployment mode.
+func NewDoctor(opts *CheckOptions, providerCheckers ...Checker) *Doctor {
+	d := newDoctor(opts)
+
+	mode := d.opts.Mode
+	if mode == "" {
+		mode, _ = detect.InstallMode()
 	}
 
 	for _, c := range providerCheckers {
@@ -103,12 +108,35 @@ func NewDoctor(opts *CheckOptions, providerCheckers ...Checker) *Doctor {
 
 	d.registerConfigurationCheckers()
 
-	if !opts.SkipNetwork {
+	if !d.opts.SkipNetwork {
 		d.registerNetworkCheckers()
 	}
 
-	if !opts.SkipState {
+	if !d.opts.SkipState {
 		d.registerStateCheckers(mode)
+	}
+
+	return d
+}
+
+// NewDemoDoctor creates a Doctor with the smaller check set used by the
+// rancher-demo binary, which always deploys onto an existing cluster through
+// the in-cluster helm-controller: kubectl, the version-resolution endpoints
+// and cluster access. Nothing here needs helm, k3s, k3d or a container runtime.
+func NewDemoDoctor(opts *CheckOptions) *Doctor {
+	d := newDoctor(opts)
+
+	d.addChecker(NewRequiredBinaryChecker("kubectl", "kubectl"))
+	d.addChecker(&CacheDirectoryChecker{})
+
+	if !d.opts.SkipNetwork {
+		d.addChecker(rancherReleasesChecker())
+		d.addChecker(githubAPIChecker())
+		d.addChecker(&GitHubRateLimitChecker{})
+	}
+
+	if !d.opts.SkipState {
+		d.addChecker(&ClusterAccessChecker{})
 	}
 
 	return d
@@ -125,16 +153,8 @@ func (d *Doctor) registerConfigurationCheckers() {
 
 // registerNetworkCheckers registers network connectivity checks.
 func (d *Doctor) registerNetworkCheckers() {
-	d.addChecker(&EndpointChecker{
-		url:         "https://releases.rancher.com/kontainer-driver-metadata/",
-		displayName: "Rancher releases",
-		purpose:     "Required for version resolution and compatibility checks",
-	})
-	d.addChecker(&EndpointChecker{
-		url:         "https://api.github.com",
-		displayName: "GitHub API",
-		purpose:     "Required for k3s releases and cert-manager version resolution",
-	})
+	d.addChecker(rancherReleasesChecker())
+	d.addChecker(githubAPIChecker())
 	d.addChecker(&EndpointChecker{
 		url:         "https://get.k3s.io",
 		displayName: "k3s install script",
@@ -146,6 +166,22 @@ func (d *Doctor) registerNetworkCheckers() {
 		purpose:     "Required for automated k3d installation",
 	})
 	d.addChecker(&GitHubRateLimitChecker{})
+}
+
+func rancherReleasesChecker() Checker {
+	return &EndpointChecker{
+		url:         "https://releases.rancher.com/kontainer-driver-metadata/",
+		displayName: "Rancher releases",
+		purpose:     "Required for version resolution and compatibility checks",
+	}
+}
+
+func githubAPIChecker() Checker {
+	return &EndpointChecker{
+		url:         "https://api.github.com",
+		displayName: "GitHub API",
+		purpose:     "Required for k3s releases and cert-manager version resolution",
+	}
 }
 
 // registerStateCheckers registers installation state checks.

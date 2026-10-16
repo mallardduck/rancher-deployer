@@ -25,6 +25,7 @@ endif
 
 # ---- Build Config ----
 BINARY  := rancher-deployer
+DEMO_BINARY := rancher-demo
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 DATE    := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -39,6 +40,10 @@ LDFLAGS := -ldflags "\
 .PHONY: build
 build: ## Build rancher-deployer binary for current platform
 	$(RUN) go build $(LDFLAGS) -o $(BINARY) .
+
+.PHONY: build-demo
+build-demo: ## Build rancher-demo binary for current platform
+	$(RUN) go build $(LDFLAGS) -o $(DEMO_BINARY) ./cmd/demo
 
 .PHONY: install
 install: ## Install rancher-deployer binary to $GOPATH/bin
@@ -58,7 +63,7 @@ tidy: ## Tidy Go modules
 
 .PHONY: clean
 clean: ## Clean build artifacts
-	rm -f $(BINARY)
+	rm -f $(BINARY) $(DEMO_BINARY)
 	rm -rf dist/
 
 .PHONY: deps
@@ -82,7 +87,15 @@ TARGETARCH   ?= amd64
 
 # Docker build arguments for local single-arch builds
 # (buildx auto-injects TARGETARCH, but plain 'docker build' doesn't)
-DOCKER_BUILD_ARGS := --build-arg TARGETARCH=$(TARGETARCH)
+# VERSION_BUILD_ARGS stamps the rancher-demo binary with the same build info as the CLI
+VERSION_BUILD_ARGS := \
+	--build-arg VERSION=$(VERSION) \
+	--build-arg COMMIT=$(COMMIT) \
+	--build-arg DATE=$(DATE)
+DOCKER_BUILD_ARGS := --build-arg TARGETARCH=$(TARGETARCH) $(VERSION_BUILD_ARGS)
+
+# Extra args for the buildx-machine image targets (build-image)
+IMAGE_ARGS ?= $(VERSION_BUILD_ARGS)
 
 # ---- Docker Build Targets (local single-arch builds) ----
 # For multi-arch builds, use: make build-image
@@ -127,7 +140,7 @@ PLATFORMS ?= linux/amd64,linux/arm64
 
 .PHONY: docker-buildx-rancher-demo
 docker-buildx-rancher-demo:
-	docker buildx build \
+	docker buildx build $(VERSION_BUILD_ARGS) \
 		--platform $(PLATFORMS) \
 		--target rancher-demo \
 		-t $(IMAGE_PREFIX)/rancher-demo:$(IMAGE_TAG) \

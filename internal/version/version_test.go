@@ -15,7 +15,7 @@ func TestShort(t *testing.T) {
 }
 
 func TestInfo(t *testing.T) {
-	got := Info()
+	got := Info("rancher-deployer")
 	if got == "" {
 		t.Error("Info() returned empty string")
 	}
@@ -41,9 +41,21 @@ func TestInfo(t *testing.T) {
 	}
 }
 
+func TestInfoUsesBinaryName(t *testing.T) {
+	for _, name := range []string{"rancher-deployer", "rancher-demo"} {
+		first := strings.SplitN(Info(name), "\n", 2)[0]
+		if want := name + " " + Version; first != want {
+			t.Errorf("Info(%q) first line = %q, want %q", name, first, want)
+		}
+	}
+	if strings.Contains(Info("rancher-demo"), "rancher-deployer") {
+		t.Error("Info(\"rancher-demo\") should not mention rancher-deployer")
+	}
+}
+
 func TestInfoFormat(t *testing.T) {
 	// Verify the output is multiline
-	info := Info()
+	info := Info("rancher-deployer")
 	lines := strings.Split(info, "\n")
 	if len(lines) < 4 {
 		t.Errorf("Info() should have at least 4 lines, got %d", len(lines))

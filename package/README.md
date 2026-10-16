@@ -21,13 +21,13 @@ docker exec k3s-base kubectl get nodes
 
 ### Target 2: `k3s-tools`
 **Purpose**: k3s-base + debugging tools  
-**What it includes**: k3s + k9s + helm + debug scripts  
+**What it includes**: k3s + helm + debug scripts  
 **Use case**: Interactive debugging, manual deployments
 
 ```bash
 docker build -f package/Dockerfile --target=k3s-tools -t k3s-tools:test .
 docker run -d --privileged --name k3s-tools k3s-tools:test
-docker exec -it k3s-tools k9s
+docker exec -it k3s-tools helm version
 docker exec -it k3s-tools debug-cert-manager
 ```
 
@@ -35,21 +35,21 @@ docker exec -it k3s-tools debug-cert-manager
 
 ---
 
-### Target 3: `rancher-deployer` (default)
+### Target 3: `rancher-demo` (default)
 **Purpose**: Full Rancher deployment stack  
-**What it includes**: k3s + tools + rancher-deployer binary  
+**What it includes**: k3s + tools + rancher-demo binary  
 **Use case**: Automated Rancher deployment
 
 ```bash
-docker build -f package/Dockerfile -t rancher-deployer:test .
+docker build -f package/Dockerfile -t rancher-demo:test .
 # Or explicitly:
-docker build -f package/Dockerfile --target=rancher-deployer -t rancher-deployer:test .
+docker build -f package/Dockerfile --target=rancher-demo -t rancher-demo:test .
 
 docker run -d --privileged --name rancher \
   -p 80:80 -p 443:443 \
   -v rancher-data:/var/lib/rancher \
   -e RANCHER_VERSION=2.8.5 \
-  rancher-deployer:test
+  rancher-demo:test
 ```
 
 **What you get**: k3s + Rancher deployed automatically
@@ -60,12 +60,12 @@ docker run -d --privileged --name rancher \
 
 ```
 ┌─────────────────────────────────────────┐
-│ rancher-deployer (Target 3)             │
-│ - Adds: rancher-deployer binary         │
+│ rancher-demo (Target 3)                 │
+│ - Adds: rancher-demo binary             │
 │ - Entrypoint: deployment wrapper        │
 ├─────────────────────────────────────────┤
 │ k3s-tools (Target 2)                    │
-│ - Adds: k9s, helm, debug scripts        │
+│ - Adds: helm, debug scripts             │
 │ - Entrypoint: inherited from k3s-base   │
 ├─────────────────────────────────────────┤
 │ k3s-base (Target 1)                     │
@@ -84,7 +84,7 @@ docker run -d --privileged --name rancher \
 - `CATTLE_K3S_VERSION` - K3s version to download (default: v1.28.5+k3s1)
 - `KUBECONFIG` - Kubeconfig location (default: /etc/rancher/k3s/k3s.yaml)
 
-### rancher-deployer Target Only
+### rancher-demo Target Only
 - `RANCHER_VERSION` - Rancher version to deploy (default: 2.8.5)
 - `K3S_VERSION` - Override k3s version resolution
 
@@ -113,8 +113,7 @@ docker build -f package/Dockerfile --target=k3s-tools -t k3s-tools:test .
 docker run -d --privileged --name k3s-tools-test k3s-tools:test
 
 # Verify tools
-docker exec -it k3s-tools-test k9s              # Interactive UI
-docker exec k3s-tools-test helm version         # Should show v4.2.1
+docker exec k3s-tools-test helm version         # Should print the helm version
 docker exec k3s-tools-test debug-cert-manager   # Cluster diagnostics
 ```
 
@@ -122,15 +121,15 @@ docker exec k3s-tools-test debug-cert-manager   # Cluster diagnostics
 
 ---
 
-### Test rancher-deployer (Full Stack)
+### Test rancher-demo (Full Stack)
 ```bash
 # Build & run
-docker build -f package/Dockerfile -t rancher-deployer:test .
+docker build -f package/Dockerfile -t rancher-demo:test .
 docker run -d --privileged --name rancher-test \
   -p 80:80 -p 443:443 \
   -v rancher-data:/var/lib/rancher \
   -e RANCHER_VERSION=2.8.5 \
-  rancher-deployer:test
+  rancher-demo:test
 
 # Monitor deployment (takes 5-10 minutes)
 docker logs -f rancher-test
@@ -163,7 +162,6 @@ docker exec <container-id> cat /var/log/k3s.log    # Check k3s logs
 docker exec <container-id> kubectl get pods -A                      # Check all pods
 docker exec <container-id> kubectl get pods -n kube-system          # Check CNI (flannel)
 docker exec <container-id> kubectl describe pod <pod> -n <ns>       # Details + events
-docker exec -it <container-id> k9s                                  # Interactive debugging
 ```
 
 ### cert-manager timeout
@@ -194,7 +192,7 @@ docker run -d --privileged \
 ```bash
 docker run -d --privileged \
   -e RANCHER_VERSION=2.9.0 \
-  rancher-deployer:test
+  rancher-demo:test
 ```
 
 ### Pin Both Versions
@@ -202,7 +200,7 @@ docker run -d --privileged \
 docker run -d --privileged \
   -e CATTLE_K3S_VERSION=v1.29.0+k3s1 \
   -e RANCHER_VERSION=2.9.0 \
-  rancher-deployer:test
+  rancher-demo:test
 ```
 
 ## Additional K3s Flags
@@ -241,9 +239,9 @@ docker buildx build \
 | **Base Image** | SUSE BCI 15.7 micro (minimal footprint) |
 | **Package Install** | zypper via chroot pattern |
 | **K3s Install** | Runtime download (version configurable) |
-| **Build Targets** | k3s-base, k3s-tools, rancher-deployer |
+| **Build Targets** | k3s-base, k3s-tools, rancher-demo |
 | **Volumes** | /var/lib/rancher, /var/lib/kubelet, /var/lib/cni, /var/log |
-| **Entrypoint** | k3s server (base/tools) or deployment wrapper (rancher-deployer) |
+| **Entrypoint** | k3s server (base/tools) or deployment wrapper (rancher-demo) |
 
 ## File Structure
 
@@ -263,7 +261,7 @@ Multi-stage Dockerfile with three targets:
 ```bash
 package/Dockerfile --target=k3s-base       # Minimal k3s runtime
 package/Dockerfile --target=k3s-tools      # k3s + debugging tools
-package/Dockerfile --target=rancher-deployer  # Full stack (default)
+package/Dockerfile --target=rancher-demo  # Full stack (default)
 ```
 
 ## Debugging
@@ -271,7 +269,7 @@ package/Dockerfile --target=rancher-deployer  # Full stack (default)
 If a target fails, test the previous layer:
 
 ```
-rancher-deployer fails?
+rancher-demo fails?
   ↓
 Test k3s-tools
   ↓
@@ -290,5 +288,5 @@ Each layer builds on proven foundation, so failures are easy to isolate.
 
 1. ✅ Test k3s-base works (you already did this!)
 2. ⏭️ Build and test k3s-tools
-3. ⏭️ Build and test rancher-deployer
+3. ⏭️ Build and test rancher-demo
 4. 🎉 Ship it

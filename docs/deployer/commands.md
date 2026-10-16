@@ -138,4 +138,4 @@ rancher-deployer deploy --channel head --rancher-version 2.15 --commit b03c4de
 ```
 
 Community and Prime publish head builds differently; see the
-[head builds design notes](decisions/head-builds.md) for details.
+[head builds design notes](../decisions/head-builds.md) for details.

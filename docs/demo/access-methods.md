@@ -244,8 +244,8 @@ docker exec rancher-demo kubectl get svc -n cattle-system rancher -o yaml | grep
 
 **Verify Helm values:**
 ```bash
-docker exec rancher-demo helm get values rancher -n cattle-system
-# Should include: service.type=NodePort
+docker exec rancher-demo kubectl get helmchart rancher -n kube-system -o jsonpath='{.spec.valuesContent}'
+# Should include the extraObjects entries (rancher-nodeport Service, rancher-localhost Ingress)
 ```
 
 ### Ingress not working

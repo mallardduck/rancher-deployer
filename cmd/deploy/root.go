@@ -5,10 +5,15 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mallardduck/rancher-deployer/internal/cli"
 )
 
+// binaryName is the executable name shown in help and version output.
+const binaryName = "rancher-deployer"
+
 var rootCmd = &cobra.Command{
-	Use:   "rancher-deployer",
+	Use:   binaryName,
 	Short: "Deploy Rancher on k3s/k3d with automatic version resolution",
 	Long: `rancher-deployer installs Rancher on top of k3s or k3d.
 
@@ -35,7 +40,7 @@ func Execute() {
 func init() {
 	rootCmd.AddCommand(newDeployCmd())
 	rootCmd.AddCommand(newUpgradeCmd())
-	rootCmd.AddCommand(newResolveCmd())
+	rootCmd.AddCommand(cli.NewResolveCmd(binaryName))
 	rootCmd.AddCommand(newTeardownCmd())
 	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newDoctorCmd())

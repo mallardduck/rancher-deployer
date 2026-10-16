@@ -80,6 +80,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build info
+        id: buildinfo
+        run: |
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
@@ -98,6 +104,10 @@ jobs:
           file: package/Dockerfile
           platforms: linux/amd64,linux/arm64
           target: rancher-demo
+          build-args: |
+            VERSION=${{ steps.buildinfo.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ steps.buildinfo.outputs.date }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

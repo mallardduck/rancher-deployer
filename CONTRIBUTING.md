@@ -29,17 +29,22 @@ Thanks for your interest in contributing!
 ## Project Structure
 
 ```
-main.go                 - Entrypoint
-cmd/deploy/             - CLI commands (Cobra): deploy, upgrade, resolve, teardown, doctor, self-update, version
+main.go                 - rancher-deployer entrypoint
+cmd/deploy/             - rancher-deployer commands (Cobra): deploy, upgrade, resolve, teardown, doctor, self-update, version
+cmd/demo/               - rancher-demo entrypoint (the binary in the demo image): resolve, deploy, version
 internal/
-  clusters/             - Cluster backends
+  cli/                  - Output helpers, prompts and shared commands (resolve) used by both binaries
+  clusters/             - Cluster backends (existing/validate checks an already-running cluster)
+  deployflow/           - The deploy workflow shared by both binaries
   detect/               - Deployment mode detection (k3s, k3d, existing)
   doctor/               - Dependency and health checks
-  helm/                 - Helm backend interface and implementations
+  helm/                 - Helm backend interface and CLI backend
+  helm/controller/      - Backend that installs through k3s/rke2's built-in helm-controller
   k8sresolver/          - k8s and k3s/k3d version resolution
   kdm/                  - Rancher KDM fetching and support-matrix parsing
+  kubectl/              - Shared kubectl calls (server version, apply, rollout, ...)
   provider/             - Provider interface each cluster backend implements
-  rancher/              - Chart references, values, cert-manager, deploy
+  rancher/              - Chart references, values and cert-manager version resolution
   runner/               - os/exec wrapper (print + run + capture)
   selfupdate/           - Self-update via binup against GitHub releases
   upgrade/              - Upgrade validation logic
@@ -62,8 +67,11 @@ binary) would slot in cleanly — the rest of the codebase doesn't need to chang
 ## Building Locally
 
 ```bash
-make build          # Build binary
-./bin/rancher-deployer version
+make build          # Build rancher-deployer
+./rancher-deployer version
+
+make build-demo     # Build rancher-demo (the binary used in the demo image)
+./rancher-demo version
 ```
 
 ## Questions?

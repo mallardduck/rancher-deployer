@@ -1,4 +1,7 @@
-package helm
+// Package controller implements a helm backend on top of k3s/rke2's built-in
+// helm-controller. It deliberately does not import the parent helm package so
+// binaries that only need this backend never link the helm CLI backend.
+package controller
 
 import (
 	"bytes"
@@ -11,20 +14,18 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/mallardduck/rancher-deployer/internal/kubectl"
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
-	"github.com/mallardduck/rancher-deployer/internal/runner"
 )
 
-var _ Backend = (*Controller)(nil)
-
-// Controller implements Backend using k3s/rke2's built-in helm-controller.
+// Controller implements helm.Backend using k3s/rke2's built-in helm-controller.
 // Instead of running helm CLI commands, it creates and manages HelmChart CRDs
 // in the kube-system namespace, which the in-cluster controller reconciles.
 // This means the helm binary is not required on the host.
 type Controller struct{}
 
-// NewController returns a helm Backend that uses the cluster's helm-controller.
-func NewController() *Controller { return &Controller{} }
+// New returns a helm backend that uses the cluster's helm-controller.
+func New() *Controller { return &Controller{} }
 
 // EnsureRepo is a no-op: the helm-controller takes the chart repo URL directly
 // from the HelmChart CR's spec.repo field — no local repo registration needed.
@@ -53,10 +54,7 @@ func (c *Controller) Upgrade(namespace string, chart rancher.Chart, values ranch
 }
 
 func (c *Controller) GetValues(release, _ string) (string, error) {
-	out, err := runner.Output("kubectl", "get", "helmchart", release,
-		"-n", "kube-system",
-		"-o", "jsonpath={.spec.valuesContent}",
-	)
+	out, err := kubectl.JSONPath("helmchart", release, "kube-system", ".spec.valuesContent")
 	if err != nil {
 		return "", fmt.Errorf("could not get HelmChart CR %q: %w", release, err)
 	}
@@ -64,22 +62,11 @@ func (c *Controller) GetValues(release, _ string) (string, error) {
 }
 
 func (c *Controller) IsInstalled(release, _ string) (bool, error) {
-	out, err := runner.Output("kubectl", "get", "helmchart", release,
-		"-n", "kube-system",
-		"--ignore-not-found",
-		"-o", "name",
-	)
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(out) != "", nil
+	return kubectl.Exists("helmchart", release, "kube-system")
 }
 
 func (c *Controller) InstalledVersion(_ string) (string, error) {
-	out, err := runner.Output("kubectl", "get", "helmchart", "rancher",
-		"-n", "kube-system",
-		"-o", "jsonpath={.spec.version}",
-	)
+	out, err := kubectl.JSONPath("helmchart", "rancher", "kube-system", ".spec.version")
 	if err != nil {
 		return "", fmt.Errorf("could not get installed version from HelmChart CR: %w", err)
 	}
@@ -129,9 +116,7 @@ func (c *Controller) InstallCertManager(version string) error {
 	}
 
 	for _, deploy := range []string{"cert-manager", "cert-manager-cainjector", "cert-manager-webhook"} {
-		if err := runner.Kubectl("rollout", "status",
-			"deployment/"+deploy, "-n", certManagerNamespace, "--timeout=120s",
-		); err != nil {
+		if err := kubectl.RolloutStatus(certManagerNamespace, deploy, 120*time.Second); err != nil {
 			return fmt.Errorf("cert-manager deployment %q did not become ready: %w", deploy, err)
 		}
 	}
@@ -156,9 +141,7 @@ func waitForHelmJob(releaseName string, timeout time.Duration) error {
 
 	// Poll until the Job is created (helm-controller may take a few seconds)
 	for time.Now().Before(deadline) {
-		out, _ := runner.Output("kubectl", "get", "job", jobName,
-			"-n", "kube-system", "--ignore-not-found", "-o", "name")
-		if strings.TrimSpace(out) != "" {
+		if exists, _ := kubectl.Exists("job", jobName, "kube-system"); exists {
 			break
 		}
 		time.Sleep(5 * time.Second)
@@ -168,15 +151,9 @@ func waitForHelmJob(releaseName string, timeout time.Duration) error {
 	}
 
 	remaining := time.Until(deadline)
-	if err := runner.Kubectl("wait", "--for=condition=complete",
-		"job/"+jobName, "-n", "kube-system",
-		fmt.Sprintf("--timeout=%ds", int(remaining.Seconds())),
-	); err != nil {
+	if err := kubectl.WaitFor("condition=complete", "job/"+jobName, "kube-system", remaining); err != nil {
 		// Check whether the job explicitly failed rather than just timing out
-		out, _ := runner.Output("kubectl", "get", "job", jobName,
-			"-n", "kube-system",
-			"-o", "jsonpath={.status.failed}",
-		)
+		out, _ := kubectl.JSONPath("job", jobName, "kube-system", ".status.failed")
 		if f := strings.TrimSpace(out); f != "" && f != "0" {
 			return fmt.Errorf("job/%s failed — inspect with: kubectl logs -n kube-system -l job-name=%s", jobName, jobName)
 		}
@@ -242,7 +219,7 @@ func (c *Controller) applyChartCR(namespace string, chart rancher.Chart, values 
 		return fmt.Errorf("rendering HelmChart manifest: %w", err)
 	}
 
-	return applyManifest(buf.String())
+	return kubectl.Apply(buf.String())
 }
 
 // buildValuesContent deep-merges a values file and --set flags into a single
@@ -328,20 +305,4 @@ func indentBlock(content, prefix string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
-}
-
-// applyManifest writes the manifest to a temp file and applies it with kubectl.
-func applyManifest(manifest string) error {
-	f, err := os.CreateTemp("", "helmchart-*.yaml")
-	if err != nil {
-		return fmt.Errorf("could not create temp manifest: %w", err)
-	}
-	defer func() { _ = os.Remove(f.Name()) }() //nolint:gosec // path from os.CreateTemp
-	if _, err := f.WriteString(manifest); err != nil {
-		return fmt.Errorf("could not write manifest: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("could not close manifest file: %w", err)
-	}
-	return runner.Kubectl("apply", "-f", f.Name())
 }
