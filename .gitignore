@@ -2,6 +2,7 @@
 dist/
 rancher-deployer
 rancher-deployer-*
+rancher-demo
 
 # Go
 *.test

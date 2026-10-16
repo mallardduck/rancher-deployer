@@ -25,6 +25,7 @@ endif
 
 # ---- Build Config ----
 BINARY  := rancher-deployer
+DEMO_BINARY := rancher-demo
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 DATE    := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -39,6 +40,10 @@ LDFLAGS := -ldflags "\
 .PHONY: build
 build: ## Build rancher-deployer binary for current platform
 	$(RUN) go build $(LDFLAGS) -o $(BINARY) .
+
+.PHONY: build-demo
+build-demo: ## Build rancher-demo binary for current platform
+	$(RUN) go build $(LDFLAGS) -o $(DEMO_BINARY) ./cmd/demo
 
 .PHONY: install
 install: ## Install rancher-deployer binary to $GOPATH/bin
@@ -58,7 +63,7 @@ tidy: ## Tidy Go modules
 
 .PHONY: clean
 clean: ## Clean build artifacts
-	rm -f $(BINARY)
+	rm -f $(BINARY) $(DEMO_BINARY)
 	rm -rf dist/
 
 .PHONY: deps

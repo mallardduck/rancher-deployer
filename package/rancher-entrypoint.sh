@@ -1,10 +1,10 @@
 #!/bin/bash
-# Wrapper entrypoint for rancher-deployer target
+# Wrapper entrypoint for the rancher-demo target
 # Starts k3s-base, waits for ready, then deploys Rancher
 
 set -e
 
-echo "=== Rancher Deployer Entrypoint ==="
+echo "=== Rancher Demo Entrypoint ==="
 echo "Rancher version: ${RANCHER_VERSION:-auto}"
 
 # ============================================================================
@@ -44,7 +44,7 @@ if [ -z "$RANCHER_VERSION" ]; then
         RESOLVE_VER_ARGS+=("--channel" "$RANCHER_CHANNEL")
     fi
 
-    RANCHER_VERSION=$(rancher-deployer "${RESOLVE_VER_ARGS[@]}")
+    RANCHER_VERSION=$(rancher-demo "${RESOLVE_VER_ARGS[@]}")
     if [ -z "$RANCHER_VERSION" ]; then
         echo "ERROR: Failed to auto-resolve Rancher version"
         exit 1
@@ -56,7 +56,7 @@ fi
 # Resolve the correct k3s version for the desired Rancher version
 if [ -z "$CATTLE_K3S_VERSION" ]; then
     echo "Resolving k3s version for Rancher ${RANCHER_VERSION}..."
-    CATTLE_K3S_VERSION=$(rancher-deployer resolve \
+    CATTLE_K3S_VERSION=$(rancher-demo resolve \
         --rancher-version "${RANCHER_VERSION}" \
         --mode k3s \
         --output k3s-version)
@@ -190,7 +190,6 @@ else
     # Build deployment command from environment variables
     DEPLOY_ARGS=(
         "deploy"
-        "--mode" "existing"
         "--rancher-version" "${RANCHER_VERSION}"
         "--yes"
     )
@@ -328,11 +327,11 @@ EOF
     DEPLOY_ARGS+=("$@")
 
     echo ""
-    echo "Executing: rancher-deployer ${DEPLOY_ARGS[*]}"
+    echo "Executing: rancher-demo ${DEPLOY_ARGS[*]}"
     echo ""
 
     # Execute deployment
-    rancher-deployer "${DEPLOY_ARGS[@]}"
+    rancher-demo "${DEPLOY_ARGS[@]}"
 
     DEPLOY_EXIT=$?
     if [ $DEPLOY_EXIT -ne 0 ]; then
