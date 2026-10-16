@@ -17,6 +17,5 @@
 
 - [Roadmap](roadmap.md) — ideas to pick up when users ask for them
 - [Design decisions](decisions/) — records of why things work the way they do
-  - [Air-gap support](decisions/air-gap-decision.md)
   - [Head builds](decisions/head-builds.md)
 - [Contributing](../CONTRIBUTING.md)
