@@ -134,7 +134,7 @@ func runUpgrade(f *upgradeFlags) error {
 		// rather than the full head build string. Safe because community
 		// always requires an explicit minor and can never reach this branch
 		// with an empty f.rancherVersion — see ResolveChart.
-		kdmTarget = minorOf(chartRef.Version)
+		kdmTarget = cli.MinorOf(chartRef.Version)
 	}
 	var matrix *kdm.SupportMatrix
 	var kdmFlavor kdm.KDMFlavor
@@ -193,7 +193,7 @@ func runUpgrade(f *upgradeFlags) error {
 
 	// ── Print plan ────────────────────────────────────────────────────────────
 	fmt.Println()
-	printUpgradePlan(f, currentVersion, clusterK8s, kdmLine(matrix, kdmFlavor, usedFallbackKDM), chartRef)
+	printUpgradePlan(f, currentVersion, clusterK8s, cli.KDMLine(matrix, kdmFlavor, usedFallbackKDM), chartRef)
 
 	if f.dryRun {
 		fmt.Println()
@@ -240,7 +240,7 @@ func printUpgradePlan(f *upgradeFlags, currentVersion, clusterK8s, kdmVer string
 	edition += " " + f.channel
 	fmt.Printf("%s━━ Upgrade Plan ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n", cli.ColorCyan, cli.ColorReset)
 	fmt.Printf("  From             : v%s\n", currentVersion)
-	fmt.Printf("  To               : %s\n", versionLine(f.rancherVersion, chart.Version, edition, f.commit))
+	fmt.Printf("  To               : %s\n", cli.VersionLine(f.rancherVersion, chart.Version, edition, f.commit))
 	fmt.Printf("  KDM              : %s\n", kdmVer)
 	fmt.Printf("  Cluster k8s      : %s\n", clusterK8s)
 	fmt.Printf("  Helm chart       : %s\n", chart.String())
