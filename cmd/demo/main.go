@@ -19,6 +19,7 @@ func main() {
 		Short: "Resolve versions and deploy Rancher inside the rancher-demo image",
 	}
 	rootCmd.AddCommand(cli.NewResolveCmd(binaryName))
+	rootCmd.AddCommand(newDeployCmd())
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "version",
 		Short: "Print version information",
