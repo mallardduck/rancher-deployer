@@ -311,14 +311,6 @@ docker exec rancher-demo kubectl get nodes -o wide
 docker exec rancher-demo kubectl describe deployment rancher -n cattle-system
 ```
 
-### Using k9s (Interactive Cluster Manager)
-
-The container includes `k9s` for interactive cluster exploration:
-
-```bash
-docker exec -it rancher-demo k9s
-```
-
 ---
 
 ## Debugging Tools
@@ -533,7 +525,6 @@ docker compose up -d
 - **Check container logs:** `docker logs rancher-demo`
 - **Debug scripts:** `debug-rancher` and `debug-cert-manager`
 - **Interactive shell:** `docker exec -it rancher-demo bash`
-- **View k9s:** `docker exec -it rancher-demo k9s`
 - **Project repo:** https://github.com/mallardduck/rancher-deployer
 
 ---
@@ -545,9 +536,7 @@ The `rancher-demo` image contains:
 - **k3s** (Kubernetes distribution)
 - **Rancher** (multi-cluster management platform)
 - **cert-manager** (automatic TLS certificates)
-- **kubectl** (Kubernetes CLI)
-- **helm** (Kubernetes package manager)
-- **k9s** (interactive cluster management)
+- **kubectl** (Kubernetes CLI, provided by the bundled k3s binary)
 - **rancher-demo** (CLI that resolves versions and orchestrates the deployment)
 
 All running in a single, self-contained container.

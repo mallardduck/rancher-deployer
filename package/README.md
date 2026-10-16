@@ -21,13 +21,13 @@ docker exec k3s-base kubectl get nodes
 
 ### Target 2: `k3s-tools`
 **Purpose**: k3s-base + debugging tools  
-**What it includes**: k3s + k9s + helm + debug scripts  
+**What it includes**: k3s + helm + debug scripts  
 **Use case**: Interactive debugging, manual deployments
 
 ```bash
 docker build -f package/Dockerfile --target=k3s-tools -t k3s-tools:test .
 docker run -d --privileged --name k3s-tools k3s-tools:test
-docker exec -it k3s-tools k9s
+docker exec -it k3s-tools helm version
 docker exec -it k3s-tools debug-cert-manager
 ```
 
@@ -65,7 +65,7 @@ docker run -d --privileged --name rancher \
 │ - Entrypoint: deployment wrapper        │
 ├─────────────────────────────────────────┤
 │ k3s-tools (Target 2)                    │
-│ - Adds: k9s, helm, debug scripts        │
+│ - Adds: helm, debug scripts             │
 │ - Entrypoint: inherited from k3s-base   │
 ├─────────────────────────────────────────┤
 │ k3s-base (Target 1)                     │
@@ -113,8 +113,7 @@ docker build -f package/Dockerfile --target=k3s-tools -t k3s-tools:test .
 docker run -d --privileged --name k3s-tools-test k3s-tools:test
 
 # Verify tools
-docker exec -it k3s-tools-test k9s              # Interactive UI
-docker exec k3s-tools-test helm version         # Should show v4.2.1
+docker exec k3s-tools-test helm version         # Should print the helm version
 docker exec k3s-tools-test debug-cert-manager   # Cluster diagnostics
 ```
 
@@ -163,7 +162,6 @@ docker exec <container-id> cat /var/log/k3s.log    # Check k3s logs
 docker exec <container-id> kubectl get pods -A                      # Check all pods
 docker exec <container-id> kubectl get pods -n kube-system          # Check CNI (flannel)
 docker exec <container-id> kubectl describe pod <pod> -n <ns>       # Details + events
-docker exec -it <container-id> k9s                                  # Interactive debugging
 ```
 
 ### cert-manager timeout
