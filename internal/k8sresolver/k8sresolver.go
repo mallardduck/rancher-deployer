@@ -30,6 +30,23 @@ const (
 type releasesCache struct {
 	FetchedAt time.Time   `json:"fetched_at"`
 	Releases  []ghRelease `json:"releases"`
+	// OldestMinor is the "MAJOR.MINOR" of the oldest cached release. Pagination
+	// may stop early, so the cache only covers targets at or above this minor.
+	OldestMinor string `json:"oldest_minor,omitempty"`
+	// Complete is true when pagination ran to the end (or k3sMaxPages), so the
+	// cache covers every minor.
+	Complete bool `json:"complete,omitempty"`
+}
+
+// covers reports whether the cache holds enough history to resolve targetMinor.
+func (c releasesCache) covers(targetMinor string) bool {
+	if c.Complete {
+		return true
+	}
+	if targetMinor == "" || c.OldestMinor == "" {
+		return false
+	}
+	return compareMinors(c.OldestMinor, targetMinor) <= 0
 }
 
 func cacheFilePath() (string, error) {
@@ -40,7 +57,7 @@ func cacheFilePath() (string, error) {
 	return filepath.Join(dir, "rancher-deployer", cacheFileName), nil
 }
 
-func loadCache() ([]ghRelease, bool) {
+func loadCache(targetMinor string) ([]ghRelease, bool) {
 	path, err := cacheFilePath()
 	if err != nil {
 		return nil, false
@@ -53,13 +70,13 @@ func loadCache() ([]ghRelease, bool) {
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, false
 	}
-	if time.Since(c.FetchedAt) > cacheTTL {
+	if time.Since(c.FetchedAt) > cacheTTL || !c.covers(targetMinor) {
 		return nil, false
 	}
 	return c.Releases, true
 }
 
-func saveCache(releases []ghRelease) {
+func saveCache(releases []ghRelease, complete bool) {
 	var path string
 	var err error
 
@@ -70,7 +87,11 @@ func saveCache(releases []ghRelease) {
 	if err = os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return
 	}
-	data, err := json.Marshal(releasesCache{FetchedAt: time.Now(), Releases: releases})
+	c := releasesCache{FetchedAt: time.Now(), Releases: releases, Complete: complete}
+	if len(releases) > 0 {
+		c.OldestMinor = extractMinor(releases[len(releases)-1].TagName)
+	}
+	data, err := json.Marshal(c)
 	if err != nil {
 		return
 	}
@@ -173,12 +194,13 @@ func githubGet(client *http.Client, url string) (*http.Response, error) {
 // stops early once releases older than targetMinor are reached — typically 1–3
 // pages instead of the theoretical maximum of 10.
 func fetchK3sReleases(targetMinor string) ([]ghRelease, error) {
-	if releases, ok := loadCache(); ok {
+	if releases, ok := loadCache(targetMinor); ok {
 		return releases, nil
 	}
 
 	client := &http.Client{Timeout: githubClientTimeout}
 	var all []ghRelease
+	complete := true
 
 	for page := 1; page <= k3sMaxPages; page++ {
 		url := fmt.Sprintf(k3sReleasesURLFmt, page)
@@ -211,6 +233,7 @@ func fetchK3sReleases(targetMinor string) ([]ghRelease, error) {
 		if targetMinor != "" && len(pageReleases) > 0 {
 			lastMinor := extractMinor(pageReleases[len(pageReleases)-1].TagName)
 			if compareMinors(lastMinor, targetMinor) < 0 {
+				complete = false
 				break
 			}
 		}
@@ -225,7 +248,7 @@ func fetchK3sReleases(targetMinor string) ([]ghRelease, error) {
 		return nil, fmt.Errorf("no k3s releases returned from GitHub API")
 	}
 
-	saveCache(all)
+	saveCache(all, complete)
 	return all, nil
 }
 
