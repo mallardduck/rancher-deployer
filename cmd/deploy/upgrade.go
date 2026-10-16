@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mallardduck/rancher-deployer/internal/cli"
+	"github.com/mallardduck/rancher-deployer/internal/helm"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
 	"github.com/mallardduck/rancher-deployer/internal/kubectl"
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
@@ -86,9 +87,11 @@ func runUpgrade(f *upgradeFlags) error {
 	fmt.Println()
 	cli.PrintBanner("Deployer")
 
+	helmBackend := helm.NewCLI()
+
 	// ── Step 1: Detect installed version ─────────────────────────────────────
 	cli.PrintStep(1, "Detecting installed Rancher version")
-	currentVersion, err := rancher.InstalledVersion(f.namespace)
+	currentVersion, err := helmBackend.InstalledVersion(f.namespace)
 	if err != nil {
 		return err
 	}
@@ -206,19 +209,19 @@ func runUpgrade(f *upgradeFlags) error {
 
 	// ── Step 7: Ensure Helm repo ─────────────────────────────────────────────
 	cli.PrintStep(7, "Configuring Helm repo")
-	if err := rancher.EnsureHelmRepo(chartRef.RepoName, chartRef.RepoURL, f.yes); err != nil {
+	if err := helmBackend.EnsureRepo(chartRef.RepoName, chartRef.RepoURL, f.yes); err != nil {
 		return err
 	}
 
 	// ── Step 8: Upgrade Rancher ───────────────────────────────────────────────
 	cli.PrintStep(8, "Upgrading Rancher via Helm")
-	if err := rancher.Upgrade(f.namespace, chartRef, helmValues); err != nil {
+	if err := helmBackend.Upgrade(f.namespace, chartRef, helmValues); err != nil {
 		return err
 	}
 
 	// ── Step 9: Wait for rollout ──────────────────────────────────────────────
 	cli.PrintStep(9, "Waiting for Rancher to become ready")
-	if err := rancher.WaitReady(f.namespace); err != nil {
+	if err := helmBackend.WaitReady(f.namespace); err != nil {
 		return err
 	}
 
