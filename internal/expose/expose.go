@@ -50,10 +50,10 @@ type Env struct {
 // deploy continues. The mode supplies data; cmd/deploy renders and prompts.
 type Step struct {
 	Title string
-	Lines []string // instructions, with computed values already filled in
 	// Check, if set, confirms the step took effect. A nil Check means the
 	// step is only acknowledged by the user.
 	Check func(context.Context) error
+	Lines []string // instructions, with computed values already filled in
 }
 
 // Mode is one way of exposing Rancher.

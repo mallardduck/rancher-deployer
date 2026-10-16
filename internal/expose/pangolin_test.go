@@ -3,12 +3,13 @@ package expose
 import (
 	"context"
 	"errors"
-	"gopkg.in/yaml.v3"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestPangolinResolve(t *testing.T) {
