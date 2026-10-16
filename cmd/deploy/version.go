@@ -14,7 +14,7 @@ func newVersionCmd() *cobra.Command {
 		Short: "Print version information",
 		Long:  "Print version information including the build version, commit, and build date.",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println(version.Info())
+			fmt.Println(version.Info(binaryName))
 		},
 	}
 

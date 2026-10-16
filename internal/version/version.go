@@ -22,12 +22,15 @@ var (
 )
 
 // Info returns a formatted version string with all build information.
-func Info() string {
+// binary is the name of the executable reporting its version, since several
+// binaries are built from this module and share these build variables.
+func Info(binary string) string {
 	return fmt.Sprintf(
-		"rancher-deployer %s\n"+
+		"%s %s\n"+
 			"  commit: %s\n"+
 			"  built:  %s\n"+
 			"  go:     %s",
+		binary,
 		Version,
 		Commit,
 		Date,

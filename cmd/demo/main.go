@@ -24,7 +24,7 @@ func main() {
 		Use:   "version",
 		Short: "Print version information",
 		Run: func(*cobra.Command, []string) {
-			fmt.Println(version.Info())
+			fmt.Println(version.Info(binaryName))
 		},
 	})
 
