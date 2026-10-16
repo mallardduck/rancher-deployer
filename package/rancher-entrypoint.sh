@@ -164,7 +164,7 @@ if [ "$RANCHER_DEPLOYED" = "true" ]; then
     echo "To do a clean redeployment:"
     echo "  1. Stop and remove the container: docker rm -f <container-name>"
     echo "  2. Delete the volume: docker volume rm <volume-name>"
-    echo "  3. Start fresh: docker run -d --privileged -p 80:80 -p 443:443 -v new-volume:/var/lib/rancher rancher-deployer:latest"
+    echo "  3. Start fresh: docker run -d --privileged -p 80:80 -p 443:443 -v new-volume:/var/lib/rancher rancher-demo:latest"
     echo ""
 
     # Show current status
