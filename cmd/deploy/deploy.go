@@ -24,7 +24,7 @@ type deployFlags struct {
 	commit            string // head channel only — pin to a specific head build
 	mode              string // "", "k3s", "k3d"
 	hostname          string
-	expose            string // "", "sslip"
+	expose            string // "", "sslip", "pangolin"
 	namespace         string
 	valuesFile        string
 	clusterName       string // k3d only
@@ -70,7 +70,7 @@ func newDeployCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha, head (continuously-published head builds — requires a minor, e.g. --rancher-version 2.15)")
 	cmd.Flags().StringVar(&f.commit, "commit", "", "Pin --channel head to the head build whose commit starts with this (instead of the newest one) — e.g. to reproduce a bug reported against a specific build")
 	cmd.Flags().StringVar(&f.mode, "mode", "", "Force install mode: k3s or k3d (default: auto-detect)")
-	cmd.Flags().StringVar(&f.expose, "expose", expose.SSLIP, "How Rancher is reached: sslip (node IP via sslip.io)")
+	cmd.Flags().StringVar(&f.expose, "expose", expose.SSLIP, "How Rancher is reached: sslip (node IP via sslip.io) or pangolin (public hostname via a Pangolin tunnel)")
 	cmd.Flags().StringVar(&f.hostname, "hostname", "", "Hostname for Rancher ingress (default: derived from --expose, e.g. rancher.<node-ip>.sslip.io)")
 	cmd.Flags().StringVar(&f.namespace, "namespace", "cattle-system", "Kubernetes namespace for Rancher")
 	cmd.Flags().StringVar(&f.valuesFile, "values-file", "", "Path to YAML file with Helm chart values")

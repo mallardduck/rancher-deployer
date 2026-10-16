@@ -1,6 +1,7 @@
 package expose
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
@@ -50,5 +51,29 @@ func TestMergeSets(t *testing.T) {
 	want := []string{"tls=ingress", "foo=bar", "ingress.x=1"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("MergeSets() = %v, want %v", got, want)
+	}
+}
+
+func TestSSLIP_NoStepsOrVerify(t *testing.T) {
+	m, _ := New("")
+	if steps := m.Steps(Exposure{}, Env{}); len(steps) != 0 {
+		t.Errorf("sslip Steps() = %v, want none", steps)
+	}
+	if err := m.Verify(context.Background(), Exposure{}); err != nil {
+		t.Errorf("sslip Verify() = %v, want nil", err)
+	}
+}
+
+func TestSSLIP_NoClusterConfig(t *testing.T) {
+	m, _ := New("")
+	if cfg := m.ClusterConfig(Env{ClusterMode: "k3s"}); len(cfg) != 0 {
+		t.Errorf("sslip ClusterConfig() = %v, want none", cfg)
+	}
+}
+
+func TestNew_NgrokNotImplemented(t *testing.T) {
+	_, err := New("ngrok")
+	if err == nil || !strings.Contains(err.Error(), "not implemented") {
+		t.Errorf("New(ngrok) error = %v, want a not-implemented error", err)
 	}
 }

@@ -1,6 +1,7 @@
 package expose
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -13,6 +14,12 @@ const SSLIP = "sslip"
 type sslipMode struct{}
 
 func (sslipMode) Name() string { return SSLIP }
+
+func (sslipMode) ClusterConfig(Env) []string { return nil }
+
+func (sslipMode) Steps(Exposure, Env) []Step { return nil }
+
+func (sslipMode) Verify(context.Context, Exposure) error { return nil }
 
 // Resolve keeps a user-supplied hostname, otherwise builds
 // rancher.<outbound-ip>.sslip.io. When the IP cannot be detected it warns and
