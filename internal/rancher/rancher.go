@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"regexp"
@@ -573,15 +572,13 @@ func BuildHelmValues(valuesFile string, setFlags []string, hostname, namespace, 
 		}
 	}
 
-	resolvedHostname := resolveHostnameWithFallback(hostname, setFlags)
-
-	sets := injectHostname(setFlags, resolvedHostname)
+	sets := injectHostname(setFlags, hostname)
 	sets = injectIfAbsent(sets, "bootstrapPassword", bootstrapPassword)
 
 	return HelmValues{
 		ValuesFile: valuesFile,
 		SetFlags:   sets,
-		Hostname:   resolvedHostname,
+		Hostname:   hostname,
 	}, nil
 }
 
@@ -596,38 +593,6 @@ func injectIfAbsent(sets []string, key, value string) []string {
 	return append(sets, prefix+value)
 }
 
-// resolveHostname returns a hostname derived from the explicit flag, a hostname=
-// entry in setFlags, or the machine's outbound IP formatted as an sslip.io address.
-// Returns an error only when all three sources fail to produce a value.
-func resolveHostname(explicit string, setFlags []string) (string, error) {
-	if explicit != "" {
-		return explicit, nil
-	}
-	for _, s := range setFlags {
-		if strings.HasPrefix(s, "hostname=") {
-			return strings.TrimPrefix(s, "hostname="), nil
-		}
-	}
-	ip, err := outboundIP()
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("rancher.%s.sslip.io", ip), nil
-}
-
-// resolveHostnameWithFallback wraps resolveHostname and falls back to
-// "rancher.127.0.0.1.sslip.io" when IP detection fails, printing a warning
-// instead of propagating the error.
-func resolveHostnameWithFallback(explicit string, setFlags []string) string {
-	hostname, err := resolveHostname(explicit, setFlags)
-	if err != nil {
-		fmt.Printf("    Warning: could not detect node IP (%v) — using 127.0.0.1\n", err)
-		fmt.Printf("    Set --hostname to override.\n")
-		return "rancher.127.0.0.1.sslip.io"
-	}
-	return hostname
-}
-
 // injectHostname adds hostname=<h> to sets if not already present.
 func injectHostname(sets []string, hostname string) []string {
 	for _, s := range sets {
@@ -636,38 +601,6 @@ func injectHostname(sets []string, hostname string) []string {
 		}
 	}
 	return append(sets, fmt.Sprintf("hostname=%s", hostname))
-}
-
-// outboundIP returns the preferred outbound IP of the local machine.
-// In containers, always returns 127.0.0.1 since the container's bridge IP
-// (172.17.0.x) is not accessible from the host.
-func outboundIP() (string, error) {
-	// Detect if running in a container
-	if inContainer() {
-		return "127.0.0.1", nil
-	}
-
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		return "", err
-	}
-	defer conn.Close()
-	addr := conn.LocalAddr().(*net.UDPAddr)
-	return addr.IP.String(), nil
-}
-
-// inContainer detects if we're running inside a container.
-// Checks for /.dockerenv file or CONTAINER environment variable.
-func inContainer() bool {
-	// Docker creates /.dockerenv in containers
-	if _, err := os.Stat("/.dockerenv"); err == nil {
-		return true
-	}
-	// Also check for explicit CONTAINER env var
-	if os.Getenv("CONTAINER") != "" {
-		return true
-	}
-	return false
 }
 
 // ── cert-manager ─────────────────────────────────────────────────────────────

@@ -21,6 +21,12 @@ rancher-deployer deploy \
   --set ingress.tls.source=letsEncrypt \
   --set letsEncrypt.email=admin@example.com
 
+# Publish through a Pangolin tunnel (see docs/deployer/expose.md)
+rancher-deployer deploy \
+  --rancher-version 2.12 \
+  --expose pangolin \
+  --hostname rancher.example.com
+
 # Dry run — see the full plan before touching anything
 rancher-deployer deploy --rancher-version 2.8.5 --dry-run
 

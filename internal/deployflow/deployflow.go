@@ -8,9 +8,11 @@ package deployflow
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/mallardduck/rancher-deployer/internal/cli"
+	"github.com/mallardduck/rancher-deployer/internal/expose"
 	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/kdm"
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
@@ -53,6 +55,7 @@ type Options struct {
 	Channel           string
 	Commit            string // head channel only — pin to a specific head build
 	Hostname          string
+	Expose            string // how Rancher is reached; "" means sslip
 	Namespace         string
 	ValuesFile        string
 	BootstrapPassword string
@@ -71,6 +74,11 @@ func Run(ctx context.Context, f Options) error {
 	f.RancherVersion = strings.TrimPrefix(f.RancherVersion, "v")
 
 	channel, err := rancher.NormaliseChannel(f.Channel)
+	if err != nil {
+		return err
+	}
+
+	exposeMode, err := expose.New(f.Expose)
 	if err != nil {
 		return err
 	}
@@ -183,7 +191,12 @@ func Run(ctx context.Context, f Options) error {
 
 	// ── Step 7: Build Helm values ────────────────────────────────────────────
 	cli.PrintStep(7, "Building Helm values")
-	helmValues, err := rancher.BuildHelmValues(f.ValuesFile, f.HelmSet, f.Hostname, f.Namespace, f.BootstrapPassword)
+	exposePlan, err := cli.NewExposePlan(exposeMode, f.Hostname, f.HelmSet, expose.Env{ClusterMode: mode, Namespace: f.Namespace})
+	if err != nil {
+		return err
+	}
+	exposure := exposePlan.Exposure
+	helmValues, err := rancher.BuildHelmValues(f.ValuesFile, exposure.MergeSets(f.HelmSet), exposure.Hostname, f.Namespace, f.BootstrapPassword)
 	if err != nil {
 		return err
 	}
@@ -202,6 +215,7 @@ func Run(ctx context.Context, f Options) error {
 	printPlan(&f, mode, resolvedK8s, clusterVersion, certManagerVersion, cli.KDMLine(matrix, kdmFlavor, usedFallbackKDM), chartRef, helmValues)
 
 	if f.DryRun {
+		exposePlan.PrintDryRun()
 		fmt.Println()
 		cli.PrintWarning("Dry run — no changes made.")
 		return nil
@@ -213,9 +227,18 @@ func Run(ctx context.Context, f Options) error {
 		return nil
 	}
 
+	if err := cli.RunExposeSteps(ctx, exposePlan.Steps, f.Yes, os.Stdin); err != nil {
+		return err
+	}
+
 	// ── Step 8: Install cluster ───────────────────────────────────────────────
 	cli.PrintStep(8, "Installing cluster")
 	if err := cluster.Setup(ctx, clusterVersion); err != nil {
+		return err
+	}
+
+	// Cluster-level config the --expose mode needs, applied before Rancher exists.
+	if err := exposePlan.ApplyConfig(); err != nil {
 		return err
 	}
 
@@ -242,6 +265,8 @@ func Run(ctx context.Context, f Options) error {
 	if err := cluster.Installer().WaitReady(f.Namespace); err != nil {
 		return err
 	}
+
+	exposePlan.Verify(ctx)
 
 	fmt.Println()
 	cli.PrintSuccess("Rancher v%s deployed successfully!", chartRef.Version)
