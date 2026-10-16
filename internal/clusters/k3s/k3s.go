@@ -12,6 +12,7 @@ import (
 
 	"github.com/mallardduck/rancher-deployer/internal/doctor"
 	"github.com/mallardduck/rancher-deployer/internal/helm"
+	"github.com/mallardduck/rancher-deployer/internal/helm/controller"
 	"github.com/mallardduck/rancher-deployer/internal/k8sresolver"
 	"github.com/mallardduck/rancher-deployer/internal/provider"
 	"github.com/mallardduck/rancher-deployer/internal/runner"
@@ -58,7 +59,7 @@ func (p *Provider) Teardown(_ context.Context, _ provider.TeardownOptions) error
 func (p *Provider) KubeconfigPath() string { return kubeconfigPath }
 
 func (p *Provider) Helm() helm.Backend {
-	return helm.NewController()
+	return controller.New()
 }
 
 func (p *Provider) Checkers() []doctor.Checker {

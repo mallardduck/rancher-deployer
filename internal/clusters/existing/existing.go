@@ -8,6 +8,7 @@ import (
 
 	"github.com/mallardduck/rancher-deployer/internal/doctor"
 	"github.com/mallardduck/rancher-deployer/internal/helm"
+	"github.com/mallardduck/rancher-deployer/internal/helm/controller"
 	"github.com/mallardduck/rancher-deployer/internal/kubectl"
 	"github.com/mallardduck/rancher-deployer/internal/provider"
 	"github.com/mallardduck/rancher-deployer/internal/runner"
@@ -63,7 +64,7 @@ func (p *Provider) Helm() helm.Backend {
 		p.distro = p.detectDistro()
 	}
 	if p.distro == "k3s" || p.distro == "rke2" {
-		return helm.NewController()
+		return controller.New()
 	}
 	return helm.NewCLI()
 }

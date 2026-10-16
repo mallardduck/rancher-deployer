@@ -1,4 +1,7 @@
-package helm
+// Package controller implements a helm backend on top of k3s/rke2's built-in
+// helm-controller. It deliberately does not import the parent helm package so
+// binaries that only need this backend never link the helm CLI backend.
+package controller
 
 import (
 	"bytes"
@@ -15,16 +18,14 @@ import (
 	"github.com/mallardduck/rancher-deployer/internal/rancher"
 )
 
-var _ Backend = (*Controller)(nil)
-
-// Controller implements Backend using k3s/rke2's built-in helm-controller.
+// Controller implements helm.Backend using k3s/rke2's built-in helm-controller.
 // Instead of running helm CLI commands, it creates and manages HelmChart CRDs
 // in the kube-system namespace, which the in-cluster controller reconciles.
 // This means the helm binary is not required on the host.
 type Controller struct{}
 
-// NewController returns a helm Backend that uses the cluster's helm-controller.
-func NewController() *Controller { return &Controller{} }
+// New returns a helm backend that uses the cluster's helm-controller.
+func New() *Controller { return &Controller{} }
 
 // EnsureRepo is a no-op: the helm-controller takes the chart repo URL directly
 // from the HelmChart CR's spec.repo field — no local repo registration needed.
