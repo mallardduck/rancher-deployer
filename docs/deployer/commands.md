@@ -13,6 +13,7 @@ rancher-deployer deploy --rancher-version <version> [flags]
 | `--prime`                | `false`           | Use Rancher Prime instead of community edition |
 | `--channel`              | `stable`          | Release channel: `stable` (GA), `latest` (RC), `alpha`, `head` (see [Head builds](#head-builds)) |
 | `--commit`               | *(none)*          | With `--channel head`, pin to the head build whose commit starts with this |
+| `--chart-path`           | *(none)*          | Install from a local chart directory or `.tgz` instead of a Helm repo; the version is read from `Chart.yaml`. Replaces `--rancher-version` |
 | `--mode`                 | *(auto-detect)*   | Force `k3s` or `k3d` |
 | `--expose`               | `sslip`           | How Rancher is reached: `sslip` or `pangolin` (see [Exposing Rancher](expose.md)) |
 | `--hostname`             | *(per `--expose`)* | Rancher ingress hostname. Default `rancher.<ip>.sslip.io`; required with `--expose pangolin` |
@@ -25,7 +26,7 @@ rancher-deployer deploy --rancher-version <version> [flags]
 | `--dry-run`              | `false`           | Print plan without executing |
 | `--yes, -y`              | `false`           | Skip confirmation prompt (for CI/non-interactive use) |
 
-\* Not required with `--prime --channel head --commit`.
+\* Not required with `--chart-path` or `--prime --channel head --commit`.
 
 ## `resolve` — inspect resolved versions (no install)
 
@@ -59,6 +60,7 @@ rancher-deployer upgrade --rancher-version <version> [flags]
 | `--prime`                | `false`           | Use Rancher Prime chart |
 | `--channel`              | `stable`          | Release channel: `stable` (GA), `latest` (RC), `alpha`, `head` (see [Head builds](#head-builds)) |
 | `--commit`               | *(none)*          | With `--channel head`, pin to the head build whose commit starts with this |
+| `--chart-path`           | *(none)*          | Install from a local chart directory or `.tgz` instead of a Helm repo; the version is read from `Chart.yaml`. Replaces `--rancher-version` |
 | `--expose`               | *(none)*          | Change how Rancher is reached: `sslip` or `pangolin`. Unset keeps the release's current hostname and TLS settings. See [Exposing Rancher](expose.md) |
 | `--hostname`             | *(none)*          | Hostname for the ingress; only valid with `--expose` |
 | `--mode`                 | *(auto-detect)*   | Cluster type (`k3s`, `k3d`, `existing`) used by `--expose` to configure ingress |
@@ -69,7 +71,7 @@ rancher-deployer upgrade --rancher-version <version> [flags]
 | `--yes, -y`              | `false`           | Skip confirmation prompt |
 | `--force`                | `false`           | Skip upgrade-path and k8s-compatibility checks |
 
-\* Not required with `--prime --channel head --commit`.
+\* Not required with `--chart-path` or `--prime --channel head --commit`.
 
 **Upgrade validation:**
 - Prevents downgrades

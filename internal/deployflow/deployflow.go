@@ -54,6 +54,7 @@ type Options struct {
 	K8sVersion        string
 	Channel           string
 	Commit            string // head channel only — pin to a specific head build
+	ChartPath         string // local chart dir or .tgz; replaces repo resolution
 	Hostname          string
 	Expose            string // how Rancher is reached; "" means sslip
 	Namespace         string
@@ -88,10 +89,11 @@ func Run(ctx context.Context, f Options) error {
 		return err
 	}
 
-	// --rancher-version is required, except for the one case where a commit
-	// alone is enough to resolve a chart: --prime --channel head --commit.
-	if f.RancherVersion == "" && (channel != rancher.ChannelHead || !f.Prime || f.Commit == "") {
-		return fmt.Errorf("--rancher-version is required (unless using --prime --channel head --commit)")
+	// --rancher-version is required, except when a local chart supplies the
+	// version, or a commit alone is enough to resolve a chart:
+	// --prime --channel head --commit.
+	if f.ChartPath == "" && f.RancherVersion == "" && (channel != rancher.ChannelHead || !f.Prime || f.Commit == "") {
+		return fmt.Errorf("--rancher-version is required (unless using --chart-path or --prime --channel head --commit)")
 	}
 
 	fmt.Println()
@@ -120,7 +122,7 @@ func Run(ctx context.Context, f Options) error {
 	// (--prime --channel head --commit, no --rancher-version) doesn't know
 	// its minor until the chart is resolved.
 	cli.PrintStep(2, "Resolving Helm chart")
-	chartRef, err := cli.ResolveChart(f.Prime, channel, f.RancherVersion, f.Commit)
+	chartRef, err := cli.ResolveChartSource(f.ChartPath, f.Prime, channel, f.RancherVersion, f.Commit)
 	if err != nil {
 		return err
 	}
@@ -250,7 +252,9 @@ func Run(ctx context.Context, f Options) error {
 
 	// ── Step 10: Ensure Helm repo ────────────────────────────────────────────
 	cli.PrintStep(10, "Configuring Helm repo")
-	if err := cluster.Installer().EnsureRepo(chartRef.RepoName, chartRef.RepoURL, f.Yes); err != nil {
+	if chartRef.IsLocal() {
+		cli.PrintInfo("Local chart — no Helm repo needed")
+	} else if err := cluster.Installer().EnsureRepo(chartRef.RepoName, chartRef.RepoURL, f.Yes); err != nil {
 		return err
 	}
 

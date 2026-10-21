@@ -71,14 +71,23 @@ var repoNames = map[bool]map[string]string{
 
 // Chart holds the Helm repository and chart reference for a Rancher edition.
 type Chart struct {
-	RepoName     string
-	RepoURL      string
-	ChartName    string
-	Version      string
+	RepoName  string
+	RepoURL   string
+	ChartName string
+	Version   string
+	// LocalPath, when set, is a chart directory or .tgz on the local disk.
+	// RepoName/RepoURL are unused and Version comes from the chart's Chart.yaml.
+	LocalPath    string
 	IsPrerelease bool
 }
 
+// IsLocal reports whether the chart is installed from a local path rather than a Helm repo.
+func (c Chart) IsLocal() bool { return c.LocalPath != "" }
+
 func (c Chart) String() string {
+	if c.IsLocal() {
+		return fmt.Sprintf("%s @ %s (local: %s)", c.ChartName, c.Version, c.LocalPath)
+	}
 	return fmt.Sprintf("%s/%s @ %s", c.RepoName, c.ChartName, c.Version)
 }
 
