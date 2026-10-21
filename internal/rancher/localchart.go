@@ -50,7 +50,7 @@ func LoadLocalChart(p string) (Chart, error) {
 		return Chart{}, fmt.Errorf("parsing Chart.yaml in %s: %w", abs, err)
 	}
 	if meta.Name == "" || meta.Version == "" {
-		return Chart{}, fmt.Errorf("Chart.yaml in %s must set both name and version", abs)
+		return Chart{}, fmt.Errorf("%s: Chart.yaml must set both name and version", abs)
 	}
 
 	version := strings.TrimPrefix(meta.Version, "v")

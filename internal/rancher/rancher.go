@@ -71,14 +71,14 @@ var repoNames = map[bool]map[string]string{
 
 // Chart holds the Helm repository and chart reference for a Rancher edition.
 type Chart struct {
-	RepoName     string
-	RepoURL      string
-	ChartName    string
-	Version      string
-	IsPrerelease bool
+	RepoName  string
+	RepoURL   string
+	ChartName string
+	Version   string
 	// LocalPath, when set, is a chart directory or .tgz on the local disk.
 	// RepoName/RepoURL are unused and Version comes from the chart's Chart.yaml.
-	LocalPath string
+	LocalPath    string
+	IsPrerelease bool
 }
 
 // IsLocal reports whether the chart is installed from a local path rather than a Helm repo.
