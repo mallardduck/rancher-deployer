@@ -23,6 +23,7 @@ type upgradeFlags struct {
 	namespace      string
 	channel        string
 	commit         string // head channel only — pin to a specific head build
+	chartPath      string // local chart dir or .tgz
 	valuesFile     string
 	expose         string // "" keeps the release's current exposure
 	hostname       string
@@ -61,6 +62,7 @@ func newUpgradeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.namespace, "namespace", "cattle-system", "Namespace where Rancher is installed")
 	cmd.Flags().BoolVar(&f.prime, "prime", false, "Use Rancher Prime chart")
 	cmd.Flags().StringVar(&f.channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha, head (continuously-published head builds — requires a minor, e.g. --rancher-version 2.15)")
+	cmd.Flags().StringVar(&f.chartPath, "chart-path", "", "Upgrade from a local chart directory or .tgz instead of a Helm repo (version is read from Chart.yaml)")
 	cmd.Flags().StringVar(&f.commit, "commit", "", "Pin --channel head to the head build whose commit starts with this (instead of the newest one) — e.g. to reproduce a bug reported against a specific build")
 	cmd.Flags().StringVar(&f.expose, "expose", "", "Change how Rancher is reached: sslip or pangolin (default: keep the release's current hostname and TLS settings)")
 	cmd.Flags().StringVar(&f.hostname, "hostname", "", "Hostname for Rancher ingress (only with --expose)")
@@ -100,8 +102,8 @@ func runUpgrade(f *upgradeFlags) error {
 
 	// --rancher-version is required, except for the one case where a commit
 	// alone is enough to resolve a chart: --prime --channel head --commit.
-	if f.rancherVersion == "" && (channel != rancher.ChannelHead || !f.prime || f.commit == "") {
-		return fmt.Errorf("--rancher-version is required (unless using --prime --channel head --commit)")
+	if f.chartPath == "" && f.rancherVersion == "" && (channel != rancher.ChannelHead || !f.prime || f.commit == "") {
+		return fmt.Errorf("--rancher-version is required (unless using --chart-path or --prime --channel head --commit)")
 	}
 
 	fmt.Println()
@@ -122,7 +124,7 @@ func runUpgrade(f *upgradeFlags) error {
 	// commit-only resolution (--prime --channel head --commit, no
 	// --rancher-version) doesn't know its minor until the chart is resolved.
 	cli.PrintStep(2, "Resolving Helm chart")
-	chartRef, err := cli.ResolveChart(f.prime, channel, f.rancherVersion, f.commit)
+	chartRef, err := cli.ResolveChartSource(f.chartPath, f.prime, channel, f.rancherVersion, f.commit)
 	if err != nil {
 		return err
 	}
@@ -257,7 +259,9 @@ func runUpgrade(f *upgradeFlags) error {
 
 	// ── Step 7: Ensure Helm repo ─────────────────────────────────────────────
 	cli.PrintStep(7, "Configuring Helm repo")
-	if err := helmBackend.EnsureRepo(chartRef.RepoName, chartRef.RepoURL, f.yes); err != nil {
+	if chartRef.IsLocal() {
+		cli.PrintInfo("Local chart — no Helm repo needed")
+	} else if err := helmBackend.EnsureRepo(chartRef.RepoName, chartRef.RepoURL, f.yes); err != nil {
 		return err
 	}
 

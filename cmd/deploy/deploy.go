@@ -22,6 +22,7 @@ type deployFlags struct {
 	k8sVersion        string
 	channel           string
 	commit            string // head channel only — pin to a specific head build
+	chartPath         string // local chart dir or .tgz
 	mode              string // "", "k3s", "k3d"
 	hostname          string
 	expose            string // "", "sslip", "pangolin"
@@ -57,6 +58,9 @@ func newDeployCmd() *cobra.Command {
   # Dry run — print resolved plan without executing
   rancher-deployer deploy --rancher-version 2.8.5 --dry-run
 
+  # Install from a locally built chart (directory or .tgz)
+  rancher-deployer deploy --chart-path ./rancher-2.8.5.tgz
+
   # Reproduce a bug reported against a specific head build
   rancher-deployer deploy --channel head --rancher-version 2.15 --commit b03c4de`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -64,11 +68,12 @@ func newDeployCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&f.rancherVersion, "rancher-version", "", "Rancher version to install, e.g. 2.8.5. A bare minor (e.g. 2.8) auto-resolves the newest patch (or newest head build for --channel head). Required, unless using --prime --channel head --commit")
+	cmd.Flags().StringVar(&f.rancherVersion, "rancher-version", "", "Rancher version to install, e.g. 2.8.5. A bare minor (e.g. 2.8) auto-resolves the newest patch (or newest head build for --channel head). Required, unless using --chart-path or --prime --channel head --commit")
 	cmd.Flags().StringVar(&f.k8sVersion, "k8s-version", "", "Target k8s major.minor, e.g. 1.28 (default: auto-select from support matrix)")
 	cmd.Flags().BoolVar(&f.prime, "prime", false, "Use Rancher Prime instead of community edition")
 	cmd.Flags().StringVar(&f.channel, "channel", "stable", "Release channel: stable (GA), latest (RC), alpha, head (continuously-published head builds — requires a minor, e.g. --rancher-version 2.15)")
 	cmd.Flags().StringVar(&f.commit, "commit", "", "Pin --channel head to the head build whose commit starts with this (instead of the newest one) — e.g. to reproduce a bug reported against a specific build")
+	cmd.Flags().StringVar(&f.chartPath, "chart-path", "", "Install Rancher from a local chart directory or .tgz instead of a Helm repo (version is read from Chart.yaml; helm CLI backend only)")
 	cmd.Flags().StringVar(&f.mode, "mode", "", "Force install mode: k3s or k3d (default: auto-detect)")
 	cmd.Flags().StringVar(&f.expose, "expose", expose.SSLIP, "How Rancher is reached: sslip (node IP via sslip.io) or pangolin (public hostname via a Pangolin tunnel)")
 	cmd.Flags().StringVar(&f.hostname, "hostname", "", "Hostname for Rancher ingress (default: derived from --expose, e.g. rancher.<node-ip>.sslip.io)")
@@ -99,6 +104,7 @@ func runDeploy(f *deployFlags) error {
 		K8sVersion:        f.k8sVersion,
 		Channel:           f.channel,
 		Commit:            f.commit,
+		ChartPath:         f.chartPath,
 		Hostname:          f.hostname,
 		Expose:            f.expose,
 		Namespace:         f.namespace,

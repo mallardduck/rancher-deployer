@@ -76,9 +76,18 @@ type Chart struct {
 	ChartName    string
 	Version      string
 	IsPrerelease bool
+	// LocalPath, when set, is a chart directory or .tgz on the local disk.
+	// RepoName/RepoURL are unused and Version comes from the chart's Chart.yaml.
+	LocalPath string
 }
 
+// IsLocal reports whether the chart is installed from a local path rather than a Helm repo.
+func (c Chart) IsLocal() bool { return c.LocalPath != "" }
+
 func (c Chart) String() string {
+	if c.IsLocal() {
+		return fmt.Sprintf("%s @ %s (local: %s)", c.ChartName, c.Version, c.LocalPath)
+	}
 	return fmt.Sprintf("%s/%s @ %s", c.RepoName, c.ChartName, c.Version)
 }
 

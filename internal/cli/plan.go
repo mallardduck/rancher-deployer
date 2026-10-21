@@ -26,6 +26,8 @@ func MinorOf(version string) string {
 // "v2.16.0-b03c4de-head (Prime head, commit: b03c4de)".
 func VersionLine(requested, resolved, edition, commit string) string {
 	switch {
+	case requested == "" && commit == "":
+		return fmt.Sprintf("v%s (%s)", resolved, edition)
 	case requested == "" && commit != "":
 		return fmt.Sprintf("v%s (%s, commit: %s)", resolved, edition, commit)
 	case requested == resolved:

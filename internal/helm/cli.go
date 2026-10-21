@@ -146,16 +146,8 @@ func (c *CLI) Install(namespace string, chart rancher.Chart, values rancher.Helm
 	}
 
 	// Assemble helm install command (no --wait, we'll monitor progress separately)
-	args := []string{
-		"install", chart.ChartName,
-		fmt.Sprintf("%s/%s", chart.RepoName, chart.ChartName),
-		"--namespace", namespace,
-		"--version", chart.Version,
-	}
-
-	if chart.IsPrerelease {
-		args = append(args, "--devel")
-	}
+	args := append([]string{"install", chart.ChartName}, chartArgs(chart)...)
+	args = append(args, "--namespace", namespace)
 
 	if values.ValuesFile != "" {
 		args = append(args, "--values", values.ValuesFile)
@@ -233,17 +225,11 @@ func (c *CLI) Upgrade(namespace string, chart rancher.Chart, values rancher.Helm
 	}
 
 	// 2. Build upgrade command (no --wait, caller will monitor progress)
-	args := []string{
-		"upgrade", chart.ChartName,
-		fmt.Sprintf("%s/%s", chart.RepoName, chart.ChartName),
+	args := append([]string{"upgrade", chart.ChartName}, chartArgs(chart)...)
+	args = append(args,
 		"--namespace", namespace,
-		"--version", chart.Version,
 		"--values", tmpFile.Name(), // applied first
-	}
-
-	if chart.IsPrerelease {
-		args = append(args, "--devel")
-	}
+	)
 
 	if values.ValuesFile != "" {
 		args = append(args, "--values", values.ValuesFile)
@@ -264,6 +250,23 @@ func (c *CLI) Upgrade(namespace string, chart rancher.Chart, values rancher.Helm
 	fmt.Println()
 
 	return nil
+}
+
+// chartArgs returns the chart reference and version flags for helm install/upgrade.
+// A local chart is passed by path with no --version, since helm takes the
+// version from the chart itself.
+func chartArgs(chart rancher.Chart) []string {
+	if chart.IsLocal() {
+		return []string{chart.LocalPath}
+	}
+	args := []string{
+		fmt.Sprintf("%s/%s", chart.RepoName, chart.ChartName),
+		"--version", chart.Version,
+	}
+	if chart.IsPrerelease {
+		args = append(args, "--devel")
+	}
+	return args
 }
 
 // ensureRancherAbsent returns an error if a Rancher Helm release already exists.

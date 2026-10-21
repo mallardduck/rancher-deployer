@@ -197,6 +197,9 @@ spec:
 // ── internal helpers ─────────────────────────────────────────────────────────
 
 func (c *Controller) applyChartCR(namespace string, chart rancher.Chart, values rancher.HelmValues) error {
+	if chart.IsLocal() {
+		return fmt.Errorf("local charts (--chart-path) are not supported with the helm-controller backend")
+	}
 	valuesContent, err := buildValuesContent(values)
 	if err != nil {
 		return fmt.Errorf("building valuesContent: %w", err)
