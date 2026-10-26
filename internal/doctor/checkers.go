@@ -431,6 +431,26 @@ func (c *EnvVarChecker) Check(ctx context.Context, opts *CheckOptions) CheckResu
 	}
 }
 
+// kubeconfigPaths returns the kubeconfig candidates in lookup order. Like
+// kubectl, KUBECONFIG may be a list of files separated by the OS path-list
+// separator; it falls back to ~/.kube/config when unset or empty.
+func kubeconfigPaths() ([]string, error) {
+	var paths []string
+	for _, p := range filepath.SplitList(os.Getenv("KUBECONFIG")) {
+		if p != "" {
+			paths = append(paths, filepath.Clean(p))
+		}
+	}
+	if len(paths) > 0 {
+		return paths, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	return []string{filepath.Join(home, ".kube", "config")}, nil
+}
+
 // ConfigFileChecker validates expected configuration files.
 type ConfigFileChecker struct {
 	displayName string
@@ -446,30 +466,24 @@ func (c *ConfigFileChecker) Category() string {
 }
 
 func (c *ConfigFileChecker) Check(ctx context.Context, opts *CheckOptions) CheckResult {
-	// Determine kubeconfig path
-	kubeconfigPath := os.Getenv("KUBECONFIG")
-	if kubeconfigPath == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return CheckResult{
-				Name:     c.Name(),
-				Category: c.Category(),
-				Status:   StatusWarn,
-				Message:  "could not determine home directory",
-			}
-		}
-		kubeconfigPath = filepath.Join(home, ".kube", "config")
-	}
-
-	// Clean path to prevent traversal
-	kubeconfigPath = filepath.Clean(kubeconfigPath)
-
-	if _, err := os.Stat(kubeconfigPath); err == nil {
+	paths, err := kubeconfigPaths()
+	if err != nil {
 		return CheckResult{
 			Name:     c.Name(),
 			Category: c.Category(),
-			Status:   StatusPass,
-			Message:  fmt.Sprintf("found at %s", kubeconfigPath),
+			Status:   StatusWarn,
+			Message:  "could not determine home directory",
+		}
+	}
+
+	for _, p := range paths {
+		if info, err := os.Stat(p); err == nil && info.Mode().IsRegular() {
+			return CheckResult{
+				Name:     c.Name(),
+				Category: c.Category(),
+				Status:   StatusPass,
+				Message:  fmt.Sprintf("found at %s", p),
+			}
 		}
 	}
 
@@ -483,7 +497,7 @@ func (c *ConfigFileChecker) Check(ctx context.Context, opts *CheckOptions) Check
 		Name:        c.Name(),
 		Category:    c.Category(),
 		Status:      status,
-		Message:     fmt.Sprintf("not found at %s", kubeconfigPath),
+		Message:     fmt.Sprintf("not found at %s", strings.Join(paths, string(filepath.ListSeparator))),
 		Remediation: "This is normal for new installations - kubeconfig will be created during deployment",
 	}
 }
