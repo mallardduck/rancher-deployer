@@ -72,8 +72,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+      id-token: write     # keyless signing / attestation via Sigstore
+      attestations: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
 
@@ -97,6 +101,11 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/mallardduck/rancher-demo
+          # The repo is rancher-deployer, so the action's repo-derived defaults
+          # for these would mislabel this image.
+          labels: |
+            org.opencontainers.image.title=rancher-demo
+            org.opencontainers.image.description=Self-contained Rancher demo stack (k3s + Rancher) with built-in access methods
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -104,6 +113,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -115,8 +125,22 @@ jobs:
             COMMIT=${{ github.sha }}
             DATE=${{ steps.buildinfo.outputs.date }}
           push: true
+          sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # Sign and attest by digest, never by tag: tags are mutable.
+      - name: Sign image (keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/mallardduck/rancher-demo@${DIGEST}"
+
+      - name: Attest image build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-name: ghcr.io/mallardduck/rancher-demo
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
   release:
     name: Un-draft release
