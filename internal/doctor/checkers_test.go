@@ -253,6 +253,22 @@ func TestConfigFileChecker_Check(t *testing.T) {
 		}
 	})
 
+	t.Run("kubeconfig path list finds a later entry", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		real := filepath.Join(tmpDir, "config")
+		if err := os.WriteFile(real, []byte("test"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("KUBECONFIG", filepath.Join(tmpDir, "missing")+string(filepath.ListSeparator)+real)
+
+		checker := &ConfigFileChecker{displayName: "kubeconfig"}
+		result := checker.Check(context.Background(), &CheckOptions{})
+
+		if result.Status != StatusPass {
+			t.Errorf("Expected StatusPass when a later KUBECONFIG entry exists, got %v", result.Status)
+		}
+	})
+
 	t.Run("missing kubeconfig", func(t *testing.T) {
 		// Set KUBECONFIG to non-existent path
 		os.Setenv("KUBECONFIG", "/nonexistent/path/to/kubeconfig")
