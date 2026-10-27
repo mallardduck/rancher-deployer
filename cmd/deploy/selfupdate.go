@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mallardduck/binup"
 	"github.com/spf13/cobra"
 
+	"github.com/mallardduck/binup"
 	"github.com/mallardduck/rancher-deployer/internal/cli"
 	"github.com/mallardduck/rancher-deployer/internal/selfupdate"
 	"github.com/mallardduck/rancher-deployer/internal/version"
