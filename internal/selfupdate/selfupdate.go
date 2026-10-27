@@ -6,11 +6,28 @@ import (
 
 	"github.com/mallardduck/binup"
 	binupgithub "github.com/mallardduck/binup/github"
+	"github.com/mallardduck/ghreleases/sigstore"
 	"github.com/mallardduck/rancher-deployer/internal/version"
 )
 
 // repo is the GitHub repository releases are published to.
 const repo = "mallardduck/rancher-deployer"
+
+// Releases are signed keylessly by .github/workflows/release.yml (cosign
+// sign-blob over the checksum manifest, via GitHub's OIDC identity). The
+// updater only trusts a manifest signed by that workflow on a version tag of
+// this repository, so a compromised release or token that swaps both the
+// binary and checksums.txt is rejected.
+const (
+	signerSubjectRegexp = `^https://github\.com/mallardduck/rancher-deployer/\.github/workflows/release\.yml@refs/tags/v.+$`
+	signerIssuer        = "https://token.actions.githubusercontent.com"
+)
+
+// newVerifier builds the checksum-manifest verifier pinned to the release
+// signer identity. Options exist for tests (an offline trusted root).
+func newVerifier(opts ...sigstore.Option) (*sigstore.Verifier, error) {
+	return sigstore.NewVerifier(sigstore.Identity{SubjectRegexp: signerSubjectRegexp, Issuer: signerIssuer}, opts...)
+}
 
 // Option configures New.
 type Option func(*config)
@@ -36,7 +53,12 @@ func New(opts ...Option) (*binup.Updater, error) {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
+	verifier, err := newVerifier()
+	if err != nil {
+		return nil, err
+	}
 	src := binupgithub.New(repo,
+		binupgithub.WithManifestVerifier(verifier),
 		binupgithub.WithPrereleases(cfg.prereleases),
 		binupgithub.WithAssetTemplate("{name}_{version|trimprefix:v}_{os}_{arch}.{ext}"),
 		binupgithub.WithChecksumAsset("{name}_{version|trimprefix:v}_checksums.txt"),
