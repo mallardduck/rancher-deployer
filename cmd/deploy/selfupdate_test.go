@@ -9,7 +9,9 @@ import (
 
 func TestConfirmPrompts(t *testing.T) {
 	stable := &binup.Release{Version: "v1.0.0"}
-	pre := &binup.Release{Version: "v1.1.0-rc.1"}
+	pre := &binup.Release{Version: "v1.1.0-rc.1", Prerelease: true}
+	// GitHub's flag is authoritative: a plain tag can still be a prerelease.
+	flagged := &binup.Release{Version: "v1.1.0", Prerelease: true}
 
 	tests := []struct {
 		name string
@@ -25,6 +27,12 @@ func TestConfirmPrompts(t *testing.T) {
 			[]string{"Update to v1.1.0-rc.1?", "v1.1.0-rc.1 is a prerelease and may be unstable. Install it anyway?"},
 		},
 		{"--pre --yes is the explicit script opt-in", selfUpdateFlags{pre: true, yes: true}, pre, nil},
+		{
+			"flagged prerelease with a plain tag still asks twice",
+			selfUpdateFlags{pre: true}, flagged,
+			[]string{"Update to v1.1.0?", "v1.1.0 is a prerelease and may be unstable. Install it anyway?"},
+		},
+		{"flagged prerelease with --yes alone still asks the prerelease question", selfUpdateFlags{yes: true}, flagged, []string{"v1.1.0 is a prerelease and may be unstable. Install it anyway?"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
