@@ -33,8 +33,10 @@ not writable by the current user are detected and skipped with guidance on
 how to update through that channel instead.
 
 Only stable releases are offered by default. Pass --pre to also consider
-prereleases; moving onto one asks for an extra confirmation. A prerelease
-install moves to the stable release that supersedes it without any flag.`,
+prereleases; moving onto one asks for an extra confirmation. An install that
+is already a prerelease (e.g. v1.1.0-rc.2) considers prereleases by default,
+so it follows later release candidates and the stable release that supersedes
+them; pass --pre=false to look only for stable releases.`,
 		Example: `  # Check and, if available, apply an update
   rancher-deployer self-update
 
@@ -50,6 +52,9 @@ install moves to the stable release that supersedes it without any flag.`,
   # Install a prerelease non-interactively (both flags are required)
   rancher-deployer self-update --pre --yes`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("pre") {
+				f.pre = isPrerelease(version.Short())
+			}
 			return runSelfUpdate(f)
 		},
 	}
@@ -57,7 +62,7 @@ install moves to the stable release that supersedes it without any flag.`,
 	cmd.Flags().BoolVar(&f.check, "check", false, "Only check for an update; don't prompt or apply")
 	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "Skip confirmation prompt")
 
-	cmd.Flags().BoolVar(&f.pre, "pre", false, "Also consider prereleases")
+	cmd.Flags().BoolVar(&f.pre, "pre", false, "Also consider prereleases (default: true when running a prerelease)")
 
 	return cmd
 }
@@ -135,6 +140,14 @@ func confirmPrompts(f *selfUpdateFlags, rel *binup.Release) []string {
 		prompts = append(prompts, fmt.Sprintf("%s is a prerelease and may be unstable. Install it anyway?", v))
 	}
 	return prompts
+}
+
+// isPrerelease reports whether v carries a semver prerelease suffix
+// (e.g. "v1.1.0-rc.2"). Build metadata after "+" is ignored, and non-version
+// strings such as "dev" are not prereleases.
+func isPrerelease(v string) bool {
+	core, _, _ := strings.Cut(v, "+")
+	return strings.Contains(core, "-")
 }
 
 // displayVersion prefixes v with "v" for display, unless it already has one

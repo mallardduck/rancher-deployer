@@ -107,7 +107,7 @@ rancher-deployer self-update [flags]
 |-------------|---------|-------------|
 | `--check`   | `false` | Only check for an update; don't prompt or apply |
 | `--yes, -y` | `false` | Skip confirmation prompt |
-| `--pre`     | `false` | Also consider prereleases |
+| `--pre`     | `true` on a prerelease, else `false` | Also consider prereleases |
 
 Checks GitHub for a newer release of `rancher-deployer` and, on confirmation, replaces
 the running binary with it. The release's checksum manifest must carry a Sigstore
@@ -116,8 +116,8 @@ file are rejected.
 
 Only stable releases are offered by default. With `--pre`, prereleases are considered
 too, and moving onto one asks for an extra confirmation; `--pre --yes` together skip
-both prompts for scripts. An install already on a prerelease moves to the stable
-release that supersedes it without any flag. Installs managed by a package manager (Homebrew, apt,
+both prompts for scripts. An install already on a prerelease considers prereleases by default (so rc.2 follows
+rc.3 and then the stable release); pass `--pre=false` to look only for stable releases. Installs managed by a package manager (Homebrew, apt,
 Scoop) or otherwise not writable by the current user are detected and skipped, with
 guidance on how to update through that channel instead.
 
