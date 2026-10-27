@@ -2,7 +2,7 @@ module github.com/mallardduck/rancher-deployer
 
 go 1.26.2
 
-toolchain go1.26.3
+toolchain go1.26.10
 
 require (
 	github.com/mallardduck/binup v0.2.2
