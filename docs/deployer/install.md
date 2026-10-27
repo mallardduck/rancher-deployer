@@ -19,11 +19,13 @@ sudo install -m 0755 rancher-deployer /usr/local/bin/rancher-deployer
 ```
 
 Once installed, keep it up to date with the built-in updater, which checks the same
-GitHub releases and verifies the downloaded binary against the published checksums:
+GitHub releases and verifies the downloaded binary against the published checksums,
+which must themselves carry a valid Sigstore signature from the release workflow:
 
 ```bash
 rancher-deployer self-update          # check, prompt, and apply if available
 rancher-deployer self-update --check  # just check
+rancher-deployer self-update --pre    # also consider prereleases
 ```
 
 ## From source (requires Go 1.25+)
