@@ -137,10 +137,12 @@ func confirmPrompts(f *selfUpdateFlags, rel *binup.Release) []string {
 	return prompts
 }
 
-// isPrerelease reports whether rel is a prerelease; binup.Release does not
-// expose that itself.
+// isPrerelease reports whether rel carries a semver prerelease suffix
+// ("v1.1.0-rc.1"); binup.Release does not expose that itself. Build metadata
+// ("+abc") is ignored, since a hyphen there is not a prerelease marker.
 func isPrerelease(rel *binup.Release) bool {
-	return false
+	core, _, _ := strings.Cut(rel.Version, "+")
+	return strings.Contains(core, "-")
 }
 
 // displayVersion prefixes v with "v" for display, unless it already has one
