@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"testing"
@@ -25,7 +26,7 @@ func TestNewVerifier_AcceptsGenuineRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := v.Verify(context.Background(), fixture(t, "checksums.txt"), fixture(t, "checksums.txt.sigstore.json")); err != nil {
+	if err := v.Verify(context.Background(), bytes.NewReader(fixture(t, "checksums.txt")), fixture(t, "checksums.txt.sigstore.json")); err != nil {
 		t.Fatalf("genuine release rejected: %v", err)
 	}
 }
@@ -36,7 +37,7 @@ func TestNewVerifier_RejectsTamperedManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	tampered := append(fixture(t, "checksums.txt"), []byte("0000000000000000000000000000000000000000000000000000000000000000  evil.tar.gz\n")...)
-	if err := v.Verify(context.Background(), tampered, fixture(t, "checksums.txt.sigstore.json")); err == nil {
+	if err := v.Verify(context.Background(), bytes.NewReader(tampered), fixture(t, "checksums.txt.sigstore.json")); err == nil {
 		t.Fatal("tampered manifest accepted")
 	}
 }

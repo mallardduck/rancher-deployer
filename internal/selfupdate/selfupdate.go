@@ -57,13 +57,16 @@ func New(opts ...Option) (*binup.Updater, error) {
 	if err != nil {
 		return nil, err
 	}
-	src := binupgithub.New(repo,
+	ghOpts := []binupgithub.Option{
 		binupgithub.WithManifestVerifier(verifier),
-		binupgithub.WithPrereleases(cfg.prereleases),
 		binupgithub.WithAssetTemplate("{name}_{version|trimprefix:v}_{os}_{arch}.{ext}"),
 		binupgithub.WithChecksumAsset("{name}_{version|trimprefix:v}_checksums.txt"),
 		binupgithub.WithTemplateMode(binupgithub.TemplateStrict),
-	)
+	}
+	if cfg.prereleases {
+		ghOpts = append(ghOpts, binupgithub.WithPrereleases())
+	}
+	src := binupgithub.New(repo, ghOpts...)
 	return binup.New(src, binup.WithVersionProvider(binup.StaticVersionInfo(currentVersionInfo())))
 }
 

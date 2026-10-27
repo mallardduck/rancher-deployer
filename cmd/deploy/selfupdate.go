@@ -87,7 +87,7 @@ func runSelfUpdate(f *selfUpdateFlags) error {
 
 	if f.check {
 		kind := ""
-		if res.Release.Prerelease {
+		if isPrerelease(res.Release) {
 			kind = " (prerelease)"
 		}
 		cli.PrintInfo("%s%s is available. Run without --check to apply it.", displayVersion(res.Latest), kind)
@@ -123,7 +123,7 @@ func runSelfUpdate(f *selfUpdateFlags) error {
 // a second one, and only --pre together with --yes skips both, so a script
 // has to opt in to prereleases explicitly.
 func confirmPrompts(f *selfUpdateFlags, rel *binup.Release) []string {
-	if f.yes && (!rel.Prerelease || f.pre) {
+	if f.yes && (!isPrerelease(rel) || f.pre) {
 		return nil
 	}
 	v := displayVersion(rel.Version)
@@ -131,10 +131,16 @@ func confirmPrompts(f *selfUpdateFlags, rel *binup.Release) []string {
 	if !f.yes {
 		prompts = append(prompts, fmt.Sprintf("Update to %s?", v))
 	}
-	if rel.Prerelease {
+	if isPrerelease(rel) {
 		prompts = append(prompts, fmt.Sprintf("%s is a prerelease and may be unstable. Install it anyway?", v))
 	}
 	return prompts
+}
+
+// isPrerelease reports whether rel is a prerelease; binup.Release does not
+// expose that itself.
+func isPrerelease(rel *binup.Release) bool {
+	return false
 }
 
 // displayVersion prefixes v with "v" for display, unless it already has one

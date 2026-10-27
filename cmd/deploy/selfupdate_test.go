@@ -9,7 +9,7 @@ import (
 
 func TestConfirmPrompts(t *testing.T) {
 	stable := &binup.Release{Version: "v1.0.0"}
-	pre := &binup.Release{Version: "v1.1.0-rc.1", Prerelease: true}
+	pre := &binup.Release{Version: "v1.1.0-rc.1"}
 
 	tests := []struct {
 		name string
