@@ -7,7 +7,7 @@
 # ============================================================================
 # Stage: Go builder for the rancher-demo binary
 # ============================================================================
-FROM rancher/hardened-build-base:v1.26.4b1 AS go-builder
+FROM rancher/hardened-build-base:v1.26.10b1 AS go-builder
 # TARGETARCH is automatically provided by buildx for multi-platform builds
 ARG TARGETARCH
 # Build metadata reported by `rancher-demo version` (.git is not in the build context)
