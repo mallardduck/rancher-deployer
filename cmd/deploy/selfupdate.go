@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mallardduck/binup"
 	"github.com/mallardduck/rancher-deployer/internal/cli"
 	"github.com/mallardduck/rancher-deployer/internal/selfupdate"
 	"github.com/mallardduck/rancher-deployer/internal/version"
@@ -15,6 +16,7 @@ import (
 type selfUpdateFlags struct {
 	check bool
 	yes   bool
+	pre   bool
 }
 
 func newSelfUpdateCmd() *cobra.Command {
@@ -28,7 +30,11 @@ replaces the running binary with it.
 
 Installs managed by a package manager (Homebrew, apt, Scoop) or otherwise
 not writable by the current user are detected and skipped with guidance on
-how to update through that channel instead.`,
+how to update through that channel instead.
+
+Only stable releases are offered by default. Pass --pre to also consider
+prereleases; moving onto one asks for an extra confirmation. A prerelease
+install moves to the stable release that supersedes it without any flag.`,
 		Example: `  # Check and, if available, apply an update
   rancher-deployer self-update
 
@@ -36,7 +42,13 @@ how to update through that channel instead.`,
   rancher-deployer self-update --check
 
   # Apply without prompting (e.g. in scripts)
-  rancher-deployer self-update --yes`,
+  rancher-deployer self-update --yes
+
+  # Include prereleases when checking or updating
+  rancher-deployer self-update --check --pre
+
+  # Install a prerelease non-interactively (both flags are required)
+  rancher-deployer self-update --pre --yes`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSelfUpdate(f)
 		},
@@ -45,11 +57,13 @@ how to update through that channel instead.`,
 	cmd.Flags().BoolVar(&f.check, "check", false, "Only check for an update; don't prompt or apply")
 	cmd.Flags().BoolVarP(&f.yes, "yes", "y", false, "Skip confirmation prompt")
 
+	cmd.Flags().BoolVar(&f.pre, "pre", false, "Also consider prereleases")
+
 	return cmd
 }
 
 func runSelfUpdate(f *selfUpdateFlags) error {
-	u, err := selfupdate.New()
+	u, err := selfupdate.New(selfupdate.WithPrereleases(f.pre))
 	if err != nil {
 		return err
 	}
@@ -72,7 +86,11 @@ func runSelfUpdate(f *selfUpdateFlags) error {
 	}
 
 	if f.check {
-		cli.PrintInfo("%s is available. Run without --check to apply it.", displayVersion(res.Latest))
+		kind := ""
+		if res.Release.Prerelease {
+			kind = " (prerelease)"
+		}
+		cli.PrintInfo("%s%s is available. Run without --check to apply it.", displayVersion(res.Latest), kind)
 		return nil
 	}
 
@@ -80,9 +98,11 @@ func runSelfUpdate(f *selfUpdateFlags) error {
 		fmt.Printf("\n%s\n\n", res.Release.Notes)
 	}
 
-	if !f.yes && !cli.PromptConfirm(fmt.Sprintf("Update to %s?", displayVersion(res.Latest))) {
-		fmt.Println("Aborted.")
-		return nil
+	for _, q := range confirmPrompts(f, res.Release) {
+		if !cli.PromptConfirm(q) {
+			fmt.Println("Aborted.")
+			return nil
+		}
 	}
 
 	applied, err := u.Apply(ctx, res.Release)
@@ -96,6 +116,25 @@ func runSelfUpdate(f *selfUpdateFlags) error {
 
 	cli.PrintSuccess("Updated to %s.", displayVersion(applied.Version))
 	return nil
+}
+
+// confirmPrompts returns the questions to ask, in order, before applying rel.
+// Stable releases need one confirmation, which --yes skips. A prerelease adds
+// a second one, and only --pre together with --yes skips both, so a script
+// has to opt in to prereleases explicitly.
+func confirmPrompts(f *selfUpdateFlags, rel *binup.Release) []string {
+	if f.yes && (!rel.Prerelease || f.pre) {
+		return nil
+	}
+	v := displayVersion(rel.Version)
+	var prompts []string
+	if !f.yes {
+		prompts = append(prompts, fmt.Sprintf("Update to %s?", v))
+	}
+	if rel.Prerelease {
+		prompts = append(prompts, fmt.Sprintf("%s is a prerelease and may be unstable. Install it anyway?", v))
+	}
+	return prompts
 }
 
 // displayVersion prefixes v with "v" for display, unless it already has one
