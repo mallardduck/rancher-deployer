@@ -1,0 +1,8 @@
+5f42bb2ed72df51df4277fabf6bea980035dbd5b144c5b276e80c165b449910b  rancher-deployer_0.6.0-rc.1_darwin_amd64.tar.gz
+d6f43b15185578f915b3d65c6b249b1c687c1fbcff3bb5e30aa8a0bb271fe1db  rancher-deployer_0.6.0-rc.1_darwin_amd64.tar.gz.sbom.spdx.json
+a34136e9faec2482a689c196f730635adfb6b2358bbf883d875af383da07cf54  rancher-deployer_0.6.0-rc.1_darwin_arm64.tar.gz
+c1ca713f5d6d2dadaea1398ad98b1c5fb741f4316d2a1fbf27e106baaee11a16  rancher-deployer_0.6.0-rc.1_darwin_arm64.tar.gz.sbom.spdx.json
+488f84a7bd61fd874752da502ab558ec54fc4817b27c9f0e0ea854a1383703ce  rancher-deployer_0.6.0-rc.1_linux_amd64.tar.gz
+d8325461ef92162739f542b01ded5cd72f3c33a8dc6bc5e149b1055231c8c4bf  rancher-deployer_0.6.0-rc.1_linux_amd64.tar.gz.sbom.spdx.json
+af3407e7ca20fa7b3be27a0438a3a92ebc9802bd8d96a23a04f1df4fd07c9e16  rancher-deployer_0.6.0-rc.1_linux_arm64.tar.gz
+e4c200db73fdc904f52208bd4f63152921dc16e711db814bfabdab6acb3e4949  rancher-deployer_0.6.0-rc.1_linux_arm64.tar.gz.sbom.spdx.json
