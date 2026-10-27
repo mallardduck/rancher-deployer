@@ -87,7 +87,7 @@ func runSelfUpdate(f *selfUpdateFlags) error {
 
 	if f.check {
 		kind := ""
-		if isPrerelease(res.Release) {
+		if res.Release.Prerelease {
 			kind = " (prerelease)"
 		}
 		cli.PrintInfo("%s%s is available. Run without --check to apply it.", displayVersion(res.Latest), kind)
@@ -123,7 +123,7 @@ func runSelfUpdate(f *selfUpdateFlags) error {
 // a second one, and only --pre together with --yes skips both, so a script
 // has to opt in to prereleases explicitly.
 func confirmPrompts(f *selfUpdateFlags, rel *binup.Release) []string {
-	if f.yes && (!isPrerelease(rel) || f.pre) {
+	if f.yes && (!rel.Prerelease || f.pre) {
 		return nil
 	}
 	v := displayVersion(rel.Version)
@@ -131,18 +131,10 @@ func confirmPrompts(f *selfUpdateFlags, rel *binup.Release) []string {
 	if !f.yes {
 		prompts = append(prompts, fmt.Sprintf("Update to %s?", v))
 	}
-	if isPrerelease(rel) {
+	if rel.Prerelease {
 		prompts = append(prompts, fmt.Sprintf("%s is a prerelease and may be unstable. Install it anyway?", v))
 	}
 	return prompts
-}
-
-// isPrerelease reports whether rel carries a semver prerelease suffix
-// ("v1.1.0-rc.1"); binup.Release does not expose that itself. Build metadata
-// ("+abc") is ignored, since a hyphen there is not a prerelease marker.
-func isPrerelease(rel *binup.Release) bool {
-	core, _, _ := strings.Cut(rel.Version, "+")
-	return strings.Contains(core, "-")
 }
 
 // displayVersion prefixes v with "v" for display, unless it already has one

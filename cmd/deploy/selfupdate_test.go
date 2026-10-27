@@ -43,25 +43,3 @@ func TestConfirmPrompts(t *testing.T) {
 		})
 	}
 }
-
-func TestIsPrerelease(t *testing.T) {
-	tests := []struct {
-		version string
-		want    bool
-	}{
-		{"v1.0.0", false},
-		{"1.0.0", false},
-		{"v1.1.0-rc.1", true},
-		{"1.1.0-beta", true},
-		{"v1.0.0+build-5", false},
-		{"v1.1.0-rc.1+abc", true},
-		{"dev", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.version, func(t *testing.T) {
-			if got := isPrerelease(&binup.Release{Version: tt.version}); got != tt.want {
-				t.Errorf("isPrerelease(%q) = %v, want %v", tt.version, got, tt.want)
-			}
-		})
-	}
-}
