@@ -43,3 +43,19 @@ func TestConfirmPrompts(t *testing.T) {
 		})
 	}
 }
+
+func TestIsPrerelease(t *testing.T) {
+	for v, want := range map[string]bool{
+		"v1.1.0-rc.2":      true,
+		"1.1.0-rc.2":       true,
+		"v1.1.0":           false,
+		"v1.1.0+build-5":   false,
+		"v1.1.0-rc.2+meta": true,
+		"dev":              false,
+		"":                 false,
+	} {
+		if got := isPrerelease(v); got != want {
+			t.Errorf("isPrerelease(%q) = %v, want %v", v, got, want)
+		}
+	}
+}
