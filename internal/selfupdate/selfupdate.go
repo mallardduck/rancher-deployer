@@ -12,14 +12,32 @@ import (
 // repo is the GitHub repository releases are published to.
 const repo = "mallardduck/rancher-deployer"
 
+// Option configures New.
+type Option func(*config)
+
+type config struct{ prereleases bool }
+
+// WithPrereleases opts in to prerelease builds. Without it, only stable
+// releases are offered, so a stable install never moves to a prerelease by
+// accident, while a prerelease install still moves to the stable that
+// supersedes it.
+func WithPrereleases(include bool) Option {
+	return func(c *config) { c.prereleases = include }
+}
+
 // New builds a binup.Updater configured for rancher-deployer's GitHub
 // releases. The asset and checksum-manifest templates match the naming
 // goreleaser produces (see .goreleaser.yaml): versions are unprefixed
 // ("0.3.1", not "v0.3.1"), even though GitHub tags carry the "v". Strict
 // template mode turns a typo in either hand-written template into an
 // immediate error instead of a confusing "asset not found" later.
-func New() (*binup.Updater, error) {
+func New(opts ...Option) (*binup.Updater, error) {
+	var cfg config
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	src := binupgithub.New(repo,
+		binupgithub.WithPrereleases(cfg.prereleases),
 		binupgithub.WithAssetTemplate("{name}_{version|trimprefix:v}_{os}_{arch}.{ext}"),
 		binupgithub.WithChecksumAsset("{name}_{version|trimprefix:v}_checksums.txt"),
 		binupgithub.WithTemplateMode(binupgithub.TemplateStrict),
