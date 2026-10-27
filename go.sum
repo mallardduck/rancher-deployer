@@ -226,10 +226,10 @@ github.com/kylelemons/godebug v1.1.0 h1:RPNrshWIDI6G2gRW9EHilWtl7Z6Sb1BR0xunSBf0
 github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+fNqagV/RAw=
 github.com/letsencrypt/boulder v0.20260309.0 h1:kZynrxK3QfqLGx6hhoz+Rfs3hgltJs1p9Mp+4+VwnY0=
 github.com/letsencrypt/boulder v0.20260309.0/go.mod h1:yG8lj8pNPZ8taq3oNdTpfBS+eC74IaEuiewqzVpXiWE=
-github.com/mallardduck/binup v0.2.1 h1:MkkwPOOjXVBcM35o1BHClgYmUU0v+dO10WvI9cB2r8A=
-github.com/mallardduck/binup v0.2.1/go.mod h1:mSDGKS1l6hJvKKAh5QJA28HTIdrSnozF33RPjrIrD2Y=
-github.com/mallardduck/ghreleases v0.8.0 h1:VD3PtvY9kt2bTf7piWn62VlUM7BCtEZnJbD68n9IJMc=
-github.com/mallardduck/ghreleases v0.8.0/go.mod h1:t6zCi4Gcgm2MvoZrK8QNIi/PnzwZ2cpf3sR+exRj7vI=
+github.com/mallardduck/binup v0.2.2 h1:x1YlBeLk8TwMib1a3giL4Yw0paF29I/krI4J7GNLNjA=
+github.com/mallardduck/binup v0.2.2/go.mod h1:rmqHYWIYEnJjomPeUAFfj7lmmA2r1Jg7404KKMgPjB0=
+github.com/mallardduck/ghreleases v0.8.1 h1:OrVKsRHTrzaILUVwhkEXDxTuLj23ap6UnCFxChL78SU=
+github.com/mallardduck/ghreleases v0.8.1/go.mod h1:t6zCi4Gcgm2MvoZrK8QNIi/PnzwZ2cpf3sR+exRj7vI=
 github.com/mallardduck/ghreleases/sigstore v0.1.0 h1:qNnQufmBge71NlgUNr4D77ItDONyIjtzGzbGrw24PMg=
 github.com/mallardduck/ghreleases/sigstore v0.1.0/go.mod h1:s8tQ1wOtxispD+Aa4OeQrZYTu8zDBbAaO5obY57DhvA=
 github.com/minio/selfupdate v0.6.0 h1:i76PgT0K5xO9+hjzKcacQtO7+MjJ4JKA8Ak8XQ9DDwU=
